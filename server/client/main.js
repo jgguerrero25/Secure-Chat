@@ -1,6 +1,16 @@
-let ws, token, username, backoff = 1000;
-let typingTimeout;
-let audio = new Audio("/client/notify.mp3"); // optional sound file
+let token = null;
+let ws = null;
+let username = null;
+
+let lastSent = 0;
+const SEND_COOLDOWN = 1000; // 1 second anti-spam
+
+const loginScreen = document.getElementById("loginScreen");
+const chatScreen = document.getElementById("chatScreen");
+const messages = document.getElementById("messages");
+const onlineList = document.getElementById("onlineList");
+
+document.getElementById("loginBtn").onclick = login;
 
 async function login() {
   username = document.getElementById("user").value;
@@ -110,22 +120,14 @@ function addSystem(text) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-function updateUsers() {
-  // You can enhance this later by tracking CONNECTED users from server
-}
-
-document.getElementById("loginBtn").onclick = login;
-
-document.getElementById("sendBtn").onclick = sendMessage;
-
-document.getElementById("msg").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
-function sendMessage() {
-  const text = document.getElementById("msg").value.trim();
-  if (!text) return;
-
-  ws.send(JSON.stringify({type:"chat", text}));
-  document.getElementById("msg").value = "";
+function updateOnline(user, add) {
+  if (add) {
+    const li = document.createElement("li");
+    li.id = `user-${user}`;
+    li.textContent = user;
+    onlineList.appendChild(li);
+  } else {
+    const li = document.getElementById(`user-${user}`);
+    if (li) li.remove();
+  }
 }
