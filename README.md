@@ -8,8 +8,7 @@
 5. Install dependencies:
    pip install -r requirements.txt
 6. Generate TLS certificates (only needed once):
-   mkdir certs
-   openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/privkey.pem -out certs/fullchain.pem -days 365
+   mkdir certs && openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/privkey.pem -out certs/fullchain.pem -days 365
 7. Start the server:
    python app.py
 8. When prompted, click "Open in Browser" for port 8443.
