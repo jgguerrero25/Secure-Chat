@@ -1,6 +1,7 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>SecureChat</title>
   <style>
     body {
@@ -9,53 +10,31 @@
       background: #f2f2f2;
     }
 
-    /* LOGIN SCREEN */
-    #loginScreen {
-      display: flex;
+    #loginScreen, #chatScreen {
+      width: 100%;
       height: 100vh;
+      display: flex;
       justify-content: center;
       align-items: center;
     }
 
     #loginBox {
       background: white;
-      padding: 30px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px #ccc;
       width: 300px;
-      text-align: center;
     }
 
-    #loginBox input {
-      width: 100%;
-      padding: 10px;
-      margin: 8px 0;
-      border-radius: 5px;
-      border: 1px solid #ccc;
-    }
-
-    #loginBox button {
-      width: 100%;
-      padding: 10px;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      margin-top: 10px;
-    }
-
-    /* CHAT LAYOUT */
     #chatScreen {
       display: none;
-      height: 100vh;
       flex-direction: column;
     }
 
     #topBar {
-      background: #007bff;
+      background: #0078ff;
       color: white;
-      padding: 12px;
+      padding: 10px 15px;
       font-size: 20px;
       font-weight: bold;
     }
@@ -63,39 +42,33 @@
     #mainArea {
       display: flex;
       flex: 1;
+      overflow: hidden;
     }
 
-    /* SIDEBAR */
-    #sidebar {
-      width: 200px;
-      background: #e9e9e9;
-      padding: 10px;
+    #onlinePanel {
+      width: 180px;
+      background: #fff;
       border-right: 1px solid #ccc;
+      padding: 10px;
     }
 
-    #sidebar h3 {
-      margin-top: 0;
-    }
-
-    /* MESSAGES */
     #messages {
       flex: 1;
       padding: 15px;
       overflow-y: auto;
-      background: #f7f7f7;
+      background: #f9f9f9;
     }
 
     .msg {
-      margin-bottom: 12px;
+      background: #d9ecff;
       padding: 10px;
-      border-radius: 8px;
-      max-width: 60%;
-      background: white;
-      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+      margin-bottom: 10px;
+      border-radius: 6px;
+      max-width: 70%;
     }
 
-    .me {
-      background: #d1e7ff;
+    .msg.me {
+      background: #c8ffd4;
       margin-left: auto;
     }
 
@@ -106,64 +79,69 @@
       margin: 10px 0;
     }
 
-    /* INPUT BAR */
+    #typingIndicator {
+      padding: 5px 15px;
+      color: #666;
+      font-size: 14px;
+      height: 20px;
+    }
+
     #inputBar {
       display: flex;
       padding: 10px;
-      background: white;
+      background: #fff;
       border-top: 1px solid #ccc;
     }
 
     #msgInput {
       flex: 1;
       padding: 10px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
+      font-size: 16px;
     }
 
     #sendBtn {
-      margin-left: 10px;
       padding: 10px 20px;
-      background: #007bff;
+      margin-left: 10px;
+      background: #0078ff;
       color: white;
       border: none;
-      border-radius: 5px;
       cursor: pointer;
+      border-radius: 4px;
     }
   </style>
 </head>
-
 <body>
 
-  <!-- LOGIN SCREEN -->
-  <div id="loginScreen">
-    <div id="loginBox">
-      <h2>SecureChat Login</h2>
-      <input id="user" placeholder="username">
-      <input id="pass" type="password" placeholder="password">
-      <button id="loginBtn">Login</button>
-    </div>
+<div id="loginScreen">
+  <div id="loginBox">
+    <h2>SecureChat Login</h2>
+    <input id="user" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;">
+    <input id="pass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:10px;">
+    <button id="loginBtn" style="width:100%;padding:10px;background:#0078ff;color:white;border:none;">Login</button>
   </div>
+</div>
 
-  <!-- CHAT SCREEN -->
-  <div id="chatScreen">
-    <div id="topBar">SecureChat</div>
+<div id="chatScreen">
+  <div id="topBar">SecureChat</div>
 
-    <div id="mainArea">
-      <div id="sidebar">
-        <h3>Online</h3>
-        <ul id="onlineList"></ul>
-      </div>
+  <div id="mainArea">
+    <div id="onlinePanel">
+      <h3>Online</h3>
+      <ul id="onlineList"></ul>
+    </div>
 
+    <div style="flex:1;display:flex;flex-direction:column;">
       <div id="messages"></div>
-    </div>
+      <div id="typingIndicator"></div>
 
-    <div id="inputBar">
-      <input id="msgInput" placeholder="Type a message...">
-      <button id="sendBtn">Send</button>
+      <div id="inputBar">
+        <input id="msgInput" placeholder="Type a message...">
+        <button id="sendBtn">Send</button>
+      </div>
     </div>
   </div>
+</div>
 
-  <script src="/client/main.js"></script>
+<script src="/client/main.js"></script>
 </body>
 </html>

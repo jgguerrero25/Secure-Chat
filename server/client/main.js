@@ -3,18 +3,22 @@ let ws = null;
 let username = null;
 
 let lastSent = 0;
-const SEND_COOLDOWN = 1000; // 1 second anti-spam
+const SEND_COOLDOWN = 1000;
 
 const loginScreen = document.getElementById("loginScreen");
 const chatScreen = document.getElementById("chatScreen");
 const messages = document.getElementById("messages");
 const onlineList = document.getElementById("onlineList");
+const typingIndicator = document.getElementById("typingIndicator");
+
+let typingTimeout = null;
+let isTyping = false;
 
 document.getElementById("loginBtn").onclick = login;
 
 async function login() {
-  username = document.getElementById("user").value;
-  const password = document.getElementById("pass").value;
+  username = document.getElementById("user").value.trim();
+  const password = document.getElementById("pass").value.trim();
 
   const res = await fetch("/login", {
     method: "POST",
@@ -37,6 +41,10 @@ async function login() {
 }
 
 function connectWS() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
   ws = new WebSocket(`wss://${location.host}/ws?token=${token}`);
 
   ws.onopen = () => console.log("Connected");
@@ -44,8 +52,14 @@ function connectWS() {
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
 
+    if (msg.type === "online_list") {
+      onlineList.innerHTML = "";
+      msg.data.users.forEach(u => updateOnline(u, true));
+    }
+
     if (msg.type === "chat") {
-      addMessage(msg.data.from, msg.data.text);
+      const { from, text } = msg.data;
+      addMessage(from, text, from === username);
     }
 
     if (msg.type === "user_joined") {
@@ -57,6 +71,10 @@ function connectWS() {
       addSystem(`${msg.data.user} left`);
       updateOnline(msg.data.user, false);
     }
+
+    if (msg.type === "typing") {
+      showTyping(msg.data.user, msg.data.isTyping);
+    }
   };
 
   ws.onclose = () => {
@@ -66,24 +84,46 @@ function connectWS() {
 }
 
 document.getElementById("sendBtn").onclick = sendMessage;
-document.getElementById("msgInput").addEventListener("keydown", e => {
+
+const msgInput = document.getElementById("msgInput");
+
+msgInput.addEventListener("keydown", e => {
   if (e.key === "Enter") sendMessage();
+});
+
+msgInput.addEventListener("input", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  if (!isTyping) {
+    isTyping = true;
+    ws.send(JSON.stringify({ type: "typing", isTyping: true }));
+  }
+
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    isTyping = false;
+    ws.send(JSON.stringify({ type: "typing", isTyping: false }));
+  }, 800);
 });
 
 function sendMessage() {
   const now = Date.now();
   if (now - lastSent < SEND_COOLDOWN) {
-    addSystem("You're sending messages too fast. Slow down.");
+    addSystem("You're sending messages too fast.");
     return;
   }
 
-  const text = document.getElementById("msgInput").value;
+  const text = msgInput.value;
   if (!text.trim()) return;
 
-  ws.send(JSON.stringify({text}));
+  ws.send(JSON.stringify({
+    type: "chat",
+    text
+  }));
+
   addMessage(username, text, true);
 
-  document.getElementById("msgInput").value = "";
+  msgInput.value = "";
   lastSent = now;
 }
 
@@ -97,9 +137,11 @@ function addMessage(user, text, isMe = false) {
   });
 
   div.innerHTML = `
-    <strong>${user}</strong>
-    <span style="font-size:12px;color:#666;">${timestamp}</span><br>
-    ${text}
+    <div>
+      <strong>${user}</strong>
+      <span style="font-size:12px;color:#666;">${timestamp}</span>
+    </div>
+    <div>${text}</div>
   `;
 
   messages.appendChild(div);
@@ -122,6 +164,7 @@ function addSystem(text) {
 
 function updateOnline(user, add) {
   if (add) {
+    if (document.getElementById(`user-${user}`)) return;
     const li = document.createElement("li");
     li.id = `user-${user}`;
     li.textContent = user;
@@ -130,4 +173,9 @@ function updateOnline(user, add) {
     const li = document.getElementById(`user-${user}`);
     if (li) li.remove();
   }
+}
+
+function showTyping(user, state) {
+  if (user === username) return;
+  typingIndicator.textContent = state ? `${user} is typing...` : "";
 }

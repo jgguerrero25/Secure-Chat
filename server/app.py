@@ -2,47 +2,21 @@ import asyncio
 import ssl
 import time
 import json
-from collections import defaultdict
 
 from aiohttp import web, WSMsgType
 import jwt
-import bcrypt
 
 JWT_SECRET = "CHANGE_ME"
 JWT_ALGO = "HS256"
 JWT_EXP_SECONDS = 1800
-RATE_LIMIT_PER_SEC = 5
-RATE_LIMIT_BURST = 10
 PING_INTERVAL = 20
-MAX_MESSAGE_SIZE = 8000
 
 USERS = {
-    "Jonathan Guerrero": bcrypt.hashpw(b"JonathanPass", bcrypt.gensalt()).decode(),
-    "bob": bcrypt.hashpw(b"bobpass", bcrypt.gensalt()).decode(),
+    "Jonathan Guerrero": "JonathanPass",
+    "bob": "bobpass",
 }
 
-CONNECTED = defaultdict(set)
-
-class TokenBucket:
-    def __init__(self, rate, burst):
-        self.rate = rate
-        self.capacity = burst
-        self.tokens = burst
-        self.last = time.monotonic()
-        self.lock = asyncio.Lock()
-
-    async def consume(self, n=1):
-        async with self.lock:
-            now = time.monotonic()
-            delta = now - self.last
-            self.last = now
-            self.tokens = min(self.capacity, self.tokens + delta * self.rate)
-            if self.tokens >= n:
-                self.tokens -= n
-                return True
-            return False
-
-RATE_LIMITERS = defaultdict(lambda: TokenBucket(RATE_LIMIT_PER_SEC, RATE_LIMIT_BURST))
+CONNECTED = {}  # ws -> username
 
 def make_jwt(username):
     now = int(time.time())
@@ -57,13 +31,10 @@ def verify_jwt(token):
 
 async def login(request):
     data = await request.json()
-    username = data.get("username")
-    password = data.get("password")
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
 
-    if username not in USERS:
-        return web.json_response({"error": "invalid_credentials"}, status=401)
-
-    if not bcrypt.checkpw(password.encode(), USERS[username].encode()):
+    if username not in USERS or USERS[username] != password:
         return web.json_response({"error": "invalid_credentials"}, status=401)
 
     token = make_jwt(username)
@@ -71,14 +42,18 @@ async def login(request):
 
 async def broadcast(event, data, exclude=None):
     msg = json.dumps({"type": event, "data": data})
-    for user, sockets in CONNECTED.items():
-        for ws in list(sockets):
-            if ws is exclude:
-                continue
-            try:
-                await ws.send_str(msg)
-            except:
-                pass
+    dead = []
+
+    for ws in list(CONNECTED.keys()):
+        if ws is exclude:
+            continue
+        try:
+            await ws.send_str(msg)
+        except:
+            dead.append(ws)
+
+    for ws in dead:
+        CONNECTED.pop(ws, None)
 
 async def websocket_handler(request):
     token = request.query.get("token")
@@ -89,8 +64,17 @@ async def websocket_handler(request):
     ws = web.WebSocketResponse(autoping=False, heartbeat=PING_INTERVAL)
     await ws.prepare(request)
 
-    CONNECTED[user].add(ws)
-    await broadcast("user_joined", {"user": user}, exclude=ws)
+    CONNECTED[ws] = user
+
+    # Send full online list to the new user
+    await ws.send_str(json.dumps({
+        "type": "online_list",
+        "data": {"users": list(set(CONNECTED.values()))}
+    }))
+
+    # Broadcast join event only if this is the first connection for this user
+    if list(CONNECTED.values()).count(user) == 1:
+        await broadcast("user_joined", {"user": user}, exclude=ws)
 
     async def ping_loop():
         while not ws.closed:
@@ -105,41 +89,37 @@ async def websocket_handler(request):
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
-                if len(msg.data) > MAX_MESSAGE_SIZE:
-                    continue
-
-                if not await RATE_LIMITERS[user].consume():
-                    await ws.send_str(json.dumps({"type": "error", "data": "rate_limited"}))
-                    continue
-
                 payload = json.loads(msg.data)
-                if payload.get("type") == "chat":
-                    await broadcast("chat", {"from": user, "text": payload.get("text", "")})
-            elif msg.type == WSMsgType.ERROR:
-                break
+                mtype = payload.get("type")
+
+                if mtype == "typing":
+                    await broadcast("typing", {"user": user, "isTyping": payload["isTyping"]}, exclude=ws)
+                    continue
+
+                if mtype == "chat":
+                    await broadcast("chat", {"from": user, "text": payload["text"]}, exclude=ws)
+                    continue
+
+
     finally:
-        CONNECTED[user].discard(ws)
+        old_user = CONNECTED.pop(ws, None)
+
+        if old_user and old_user not in CONNECTED.values():
+            await broadcast("user_left", {"user": old_user})
+
         ping_task.cancel()
-        await broadcast("user_left", {"user": user})
 
     return ws
 
-# ---------------------------
-# STATIC ROUTES (FIXED)
-# ---------------------------
-
 app = web.Application()
 
-# Serve static files under /client/
 app.router.add_static("/client/", "./client", show_index=False)
 
-# Serve index.html at root
 async def index(request):
     return web.FileResponse("./client/index.html")
 
 app.router.add_get("/", index)
 
-# API routes
 app.add_routes([
     web.post("/login", login),
     web.get("/ws", websocket_handler),
