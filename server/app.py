@@ -17,7 +17,7 @@ PING_INTERVAL = 20
 MAX_MESSAGE_SIZE = 8000
 
 USERS = {
-    "alice": bcrypt.hashpw(b"alicepass", bcrypt.gensalt()).decode(),
+    "Jonathan Guerrero": bcrypt.hashpw(b"JonathanPass", bcrypt.gensalt()).decode(),
     "bob": bcrypt.hashpw(b"bobpass", bcrypt.gensalt()).decode(),
 }
 

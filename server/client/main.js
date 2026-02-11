@@ -1,112 +1,16 @@
-// let ws, token, backoff = 1000;
+let token = null;
+let ws = null;
+let username = null;
 
-// async function login() {
-//   const username = document.getElementById("user").value;
-//   const password = document.getElementById("pass").value;
+let lastSent = 0;
+const SEND_COOLDOWN = 1000; // 1 second anti-spam
 
-//   const res = await fetch("/login", {
-//     method: "POST",
-//     headers: {"Content-Type": "application/json"},
-//     body: JSON.stringify({username, password})
-//   });
+const loginScreen = document.getElementById("loginScreen");
+const chatScreen = document.getElementById("chatScreen");
+const messages = document.getElementById("messages");
+const onlineList = document.getElementById("onlineList");
 
-//   if (!res.ok) return alert("Login failed");
-
-//   token = (await res.json()).token;
-//   connect();
-// }
-
-// function connect() {
-//   const url = `${location.protocol.replace("http","ws")}//${location.host}/ws?token=${token}`;
-//   ws = new WebSocket(url);
-
-//   ws.onopen = () => {
-//     backoff = 1000;
-//     document.getElementById("chat").style.display = "block";
-//   };
-
-//   ws.onmessage = (ev) => {
-//     const msg = JSON.parse(ev.data);
-//     const div = document.createElement("div");
-//     div.textContent = `[${msg.type}] ${JSON.stringify(msg.data)}`;
-//     document.getElementById("messages").appendChild(div);
-//   };
-
-//   ws.onclose = () => {
-//     setTimeout(connect, backoff);
-//     backoff = Math.min(backoff * 2, 30000);
-//   };
-// }
-
-// document.getElementById("loginBtn").onclick = login;
-// document.getElementById("sendBtn").onclick = () => {
-//   ws.send(JSON.stringify({type:"chat", text:document.getElementById("msg").value}));
-// };
-// let ws, token, username, backoff = 1000;
-
-// async function login() {
-//   username = document.getElementById("user").value;
-//   const password = document.getElementById("pass").value;
-
-//   const res = await fetch("/login", {
-//     method: "POST",
-//     headers: {"Content-Type": "application/json"},
-//     body: JSON.stringify({username, password})
-//   });
-
-//   if (!res.ok) return alert("Login failed");
-
-//   token = (await res.json()).token;
-//   connect();
-// }
-
-// function connect() {
-//   const url = `${location.protocol.replace("http","ws")}//${location.host}/ws?token=${token}`;
-//   ws = new WebSocket(url);
-
-//   ws.onopen = () => {
-//     backoff = 1000;
-//     document.getElementById("login").style.display = "none";
-//     document.getElementById("chat").style.display = "flex";
-//   };
-
-//   ws.onmessage = (ev) => {
-//     const msg = JSON.parse(ev.data);
-//     if (msg.type === "chat") {
-//       addMessage(msg.data.from, msg.data.text);
-//     }
-//     if (msg.type === "user_joined") {
-//       addMessage("System", `${msg.data.user} joined`);
-//     }
-//     if (msg.type === "user_left") {
-//       addMessage("System", `${msg.data.user} left`);
-//     }
-//   };
-
-//   ws.onclose = () => {
-//     setTimeout(connect, backoff);
-//     backoff = Math.min(backoff * 2, 30000);
-//   };
-// }
-
-// function addMessage(from, text) {
-//   const div = document.createElement("div");
-//   div.className = "msg" + (from === username ? " me" : "");
-//   div.textContent = `${from}: ${text}`;
-//   document.getElementById("messages").appendChild(div);
-//   div.scrollIntoView();
-// }
-
-// document.getElementById("loginBtn").onclick = login;
-
-// document.getElementById("sendBtn").onclick = () => {
-//   const text = document.getElementById("msg").value;
-//   ws.send(JSON.stringify({type:"chat", text}));
-//   document.getElementById("msg").value = "";
-// };
-let ws, token, username, backoff = 1000;
-let typingTimeout;
-let audio = new Audio("/client/notify.mp3"); // optional sound file
+document.getElementById("loginBtn").onclick = login;
 
 async function login() {
   username = document.getElementById("user").value;
@@ -118,80 +22,112 @@ async function login() {
     body: JSON.stringify({username, password})
   });
 
-  if (!res.ok) return alert("Login failed");
+  if (!res.ok) {
+    alert("Invalid login");
+    return;
+  }
 
-  token = (await res.json()).token;
-  connect();
+  const data = await res.json();
+  token = data.token;
+
+  loginScreen.style.display = "none";
+  chatScreen.style.display = "flex";
+
+  connectWS();
 }
 
-function connect() {
-  const url = `${location.protocol.replace("http","ws")}//${location.host}/ws?token=${token}`;
-  ws = new WebSocket(url);
+function connectWS() {
+  ws = new WebSocket(`wss://${location.host}/ws?token=${token}`);
 
-  ws.onopen = () => {
-    backoff = 1000;
-    document.getElementById("login").style.display = "none";
-    document.getElementById("chat").style.display = "flex";
-    document.getElementById("headerName").textContent = `Logged in as ${username}`;
-  };
+  ws.onopen = () => console.log("Connected");
 
-  ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
 
     if (msg.type === "chat") {
       addMessage(msg.data.from, msg.data.text);
-      if (msg.data.from !== username) audio.play();
     }
 
     if (msg.type === "user_joined") {
       addSystem(`${msg.data.user} joined`);
-      updateUsers();
+      updateOnline(msg.data.user, true);
     }
 
     if (msg.type === "user_left") {
       addSystem(`${msg.data.user} left`);
-      updateUsers();
+      updateOnline(msg.data.user, false);
     }
   };
 
   ws.onclose = () => {
-    setTimeout(connect, backoff);
-    backoff = Math.min(backoff * 2, 30000);
+    addSystem("Disconnected. Reconnecting...");
+    setTimeout(connectWS, 2000);
   };
 }
 
-function addMessage(from, text) {
+document.getElementById("sendBtn").onclick = sendMessage;
+document.getElementById("msgInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") sendMessage();
+});
+
+function sendMessage() {
+  const now = Date.now();
+  if (now - lastSent < SEND_COOLDOWN) {
+    addSystem("You're sending messages too fast. Slow down.");
+    return;
+  }
+
+  const text = document.getElementById("msgInput").value;
+  if (!text.trim()) return;
+
+  ws.send(JSON.stringify({text}));
+  addMessage(username, text, true);
+
+  document.getElementById("msgInput").value = "";
+  lastSent = now;
+}
+
+function addMessage(user, text, isMe = false) {
   const div = document.createElement("div");
-  div.className = "msg" + (from === username ? " me" : "");
-  div.textContent = `${from === username ? "You" : from}: ${text}`;
-  document.getElementById("messages").appendChild(div);
-  div.scrollIntoView({behavior: "smooth"});
+  div.className = "msg" + (isMe ? " me" : "");
+
+  const timestamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  div.innerHTML = `
+    <strong>${user}</strong>
+    <span style="font-size:12px;color:#666;">${timestamp}</span><br>
+    ${text}
+  `;
+
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
 }
 
 function addSystem(text) {
   const div = document.createElement("div");
   div.className = "system";
-  div.textContent = text;
-  document.getElementById("messages").appendChild(div);
-  div.scrollIntoView({behavior: "smooth"});
+
+  const timestamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  div.textContent = `[${timestamp}] ${text}`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
 }
 
-function updateUsers() {
-  // You can enhance this later by tracking CONNECTED users from server
-}
-
-document.getElementById("loginBtn").onclick = login;
-
-document.getElementById("sendBtn").onclick = sendMessage;
-
-document.getElementById("msg").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
-
-function sendMessage() {
-  const text = document.getElementById("msg").value.trim();
-  if (!text) return;
-
-  ws.send(JSON.stringify({type:"chat", text}));
-  document.getElementById("msg").value = "";
+function updateOnline(user, add) {
+  if (add) {
+    const li = document.createElement("li");
+    li.id = `user-${user}`;
+    li.textContent = user;
+    onlineList.appendChild(li);
+  } else {
+    const li = document.getElementById(`user-${user}`);
+    if (li) li.remove();
+  }
 }
