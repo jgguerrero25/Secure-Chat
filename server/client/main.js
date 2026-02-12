@@ -45,7 +45,7 @@ function connectWS() {
     try { ws.close(); } catch {}
   }
 
-  ws = new WebSocket(`wss://${location.host}/ws?token=${token}`);
+ws = new WebSocket(`wss://securechat.onrender.com/ws?token=${token}`);
 
   ws.onopen = () => console.log("Connected");
 
