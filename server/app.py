@@ -221,7 +221,7 @@ app.router.add_post("/login", login)
 app.router.add_get("/ws", websocket_handler)
 
 # Serve static files from server/client/
-app.router.add_static("/", "./client", show_index=True)
+app.router.add_static("/", "server/client", show_index=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
