@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -143,5 +143,38 @@
 </div>
 
 <script src="/client/main.js"></script>
+</body>
+</html> -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SecureChat</title>
+    <style>
+        body { font-family: Arial; background: #111; color: white; }
+        #chat { display: none; }
+        #messages { height: 300px; overflow-y: auto; border: 1px solid #444; padding: 10px; }
+        #online { margin-bottom: 10px; }
+        #typing { color: #888; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div id="login">
+    <h2>Login</h2>
+    <input id="username" placeholder="username"><br><br>
+    <input id="password" type="password" placeholder="password"><br><br>
+    <button onclick="login()">Login</button>
+</div>
+
+<div id="chat">
+    <h2>SecureChat</h2>
+    <div id="online"></div>
+    <div id="messages"></div>
+    <div id="typing"></div>
+    <input id="msg" placeholder="Type a message..." oninput="sendTyping()">
+    <button onclick="sendMessage()">Send</button>
+</div>
+
+<script src="main.js"></script>
 </body>
 </html>
