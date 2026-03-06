@@ -126,4 +126,6 @@ app.add_routes([
 ])
 
 if __name__ == "__main__":
-    web.run_app(app, host="127.0.0.1", port=8080)
+    sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    sslctx.load_cert_chain("certs/fullchain.pem", "certs/privkey.pem")
+    web.run_app(app, host="localhost", port=8443, ssl_context=sslctx)
