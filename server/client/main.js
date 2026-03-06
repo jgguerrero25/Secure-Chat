@@ -17,8 +17,8 @@ let isTyping = false;
 document.getElementById("loginBtn").onclick = login;
 
 async function login() {
-  username = document.getElementById("user").value;
-  const password = document.getElementById("pass").value;
+  username = document.getElementById("user").value.trim();
+  const password = document.getElementById("pass").value.trim();
 
   const res = await fetch("/login", {
     method: "POST",
@@ -41,30 +41,35 @@ async function login() {
 }
 
 function connectWS() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
   ws = new WebSocket(`wss://${location.host}/ws?token=${token}`);
+
+  ws.onopen = () => console.log("Connected");
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
 
+    if (msg.type === "online_list") {
+      onlineList.innerHTML = "";
+      msg.data.users.forEach(u => updateOnline(u, true));
+    }
+
     if (msg.type === "chat") {
-      addMessage(msg.data.from, msg.data.text, msg.data.from === username);
+      const { from, text } = msg.data;
+      addMessage(from, text, from === username);
     }
 
     if (msg.type === "user_joined") {
       addSystem(`${msg.data.user} joined`);
+      updateOnline(msg.data.user, true);
     }
 
     if (msg.type === "user_left") {
       addSystem(`${msg.data.user} left`);
-    }
-
-    if (msg.type === "online_list") {
-      onlineList.innerHTML = "";
-      msg.data.users.forEach(u => {
-        const li = document.createElement("li");
-        li.textContent = u;
-        onlineList.appendChild(li);
-      });
+      updateOnline(msg.data.user, false);
     }
 
     if (msg.type === "typing") {
@@ -155,6 +160,19 @@ function addSystem(text) {
   div.textContent = `[${timestamp}] ${text}`;
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
+}
+
+function updateOnline(user, add) {
+  if (add) {
+    if (document.getElementById(`user-${user}`)) return;
+    const li = document.createElement("li");
+    li.id = `user-${user}`;
+    li.textContent = user;
+    onlineList.appendChild(li);
+  } else {
+    const li = document.getElementById(`user-${user}`);
+    if (li) li.remove();
+  }
 }
 
 function showTyping(user, state) {

@@ -1,112 +1,131 @@
-import os
-import json
 import asyncio
-import bcrypt
-import jwt
-from aiohttp import web
+import ssl
+import time
+import json
 
-JWT_SECRET = "supersecret123"
+from aiohttp import web, WSMsgType
+import jwt
+
+JWT_SECRET = "CHANGE_ME"
 JWT_ALGO = "HS256"
+JWT_EXP_SECONDS = 1800
+PING_INTERVAL = 20
 
 USERS = {
-    "jg": bcrypt.hashpw("123".encode(), bcrypt.gensalt()).decode(),
-    "friend": bcrypt.hashpw("123".encode(), bcrypt.gensalt()).decode()
+    "Jonathan Guerrero": "JonathanPass",
+    "bob": "bobpass",
 }
 
-online_users = set()
-sockets = {}
+CONNECTED = {}  # ws -> username
+
+def make_jwt(username):
+    now = int(time.time())
+    payload = {"sub": username, "iat": now, "exp": now + JWT_EXP_SECONDS}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+def verify_jwt(token):
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])["sub"]
+    except:
+        return None
 
 async def login(request):
     data = await request.json()
-    username = data.get("username")
-    password = data.get("password")
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
 
-    if username not in USERS:
-        return web.json_response({"error": "Invalid username"}, status=401)
+    if username not in USERS or USERS[username] != password:
+        return web.json_response({"error": "invalid_credentials"}, status=401)
 
-    if not bcrypt.checkpw(password.encode(), USERS[username].encode()):
-        return web.json_response({"error": "Invalid password"}, status=401)
-
-    token = jwt.encode({"username": username}, JWT_SECRET, algorithm=JWT_ALGO)
+    token = make_jwt(username)
     return web.json_response({"token": token})
+
+async def broadcast(event, data, exclude=None):
+    msg = json.dumps({"type": event, "data": data})
+    dead = []
+
+    for ws in list(CONNECTED.keys()):
+        if ws is exclude:
+            continue
+        try:
+            await ws.send_str(msg)
+        except:
+            dead.append(ws)
+
+    for ws in dead:
+        CONNECTED.pop(ws, None)
 
 async def websocket_handler(request):
     token = request.query.get("token")
-    if not token:
-        return web.Response(status=401)
+    user = verify_jwt(token)
+    if not user:
+        return web.Response(status=401, text="Unauthorized")
 
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-        username = payload["username"]
-    except:
-        return web.Response(status=401)
-
-    ws = web.WebSocketResponse()
+    ws = web.WebSocketResponse(autoping=False, heartbeat=PING_INTERVAL)
     await ws.prepare(request)
 
-    sockets[username] = ws
-    online_users.add(username)
+    CONNECTED[ws] = user
 
-    await broadcast({
-        "type": "user_joined",
-        "data": {"user": username}
-    })
-
-    await broadcast({
+    # Send full online list to the new user
+    await ws.send_str(json.dumps({
         "type": "online_list",
-        "data": {"users": list(online_users)}
-    })
+        "data": {"users": list(set(CONNECTED.values()))}
+    }))
 
-    async for msg in ws:
-        if msg.type == web.WSMsgType.TEXT:
-            data = json.loads(msg.data)
+    # Broadcast join event only if this is the first connection for this user
+    if list(CONNECTED.values()).count(user) == 1:
+        await broadcast("user_joined", {"user": user}, exclude=ws)
 
-            if data["type"] == "chat":
-                await broadcast({
-                    "type": "chat",
-                    "data": {"from": username, "text": data["text"]}
-                })
+    async def ping_loop():
+        while not ws.closed:
+            try:
+                await ws.ping()
+            except:
+                break
+            await asyncio.sleep(PING_INTERVAL)
 
-            elif data["type"] == "typing":
-                await broadcast({
-                    "type": "typing",
-                    "data": {"user": username, "isTyping": data["isTyping"]}
-                })
+    ping_task = asyncio.create_task(ping_loop())
 
-    # disconnect
-    online_users.remove(username)
-    del sockets[username]
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                payload = json.loads(msg.data)
+                mtype = payload.get("type")
 
-    await broadcast({
-        "type": "user_left",
-        "data": {"user": username}
-    })
+                if mtype == "typing":
+                    await broadcast("typing", {"user": user, "isTyping": payload["isTyping"]}, exclude=ws)
+                    continue
 
-    await broadcast({
-        "type": "online_list",
-        "data": {"users": list(online_users)}
-    })
+                if mtype == "chat":
+                    await broadcast("chat", {"from": user, "text": payload["text"]}, exclude=ws)
+                    continue
+
+
+    finally:
+        old_user = CONNECTED.pop(ws, None)
+
+        if old_user and old_user not in CONNECTED.values():
+            await broadcast("user_left", {"user": old_user})
+
+        ping_task.cancel()
 
     return ws
 
-async def broadcast(data):
-    dead = []
-    for user, ws in sockets.items():
-        try:
-            await ws.send_json(data)
-        except:
-            dead.append(user)
-
-    for user in dead:
-        del sockets[user]
-
 app = web.Application()
-app.router.add_post("/login", login)
-app.router.add_get("/ws", websocket_handler)
 
-# IMPORTANT FOR RENDER
-app.router.add_static("/", "./server/client", show_index=False)
+app.router.add_static("/client/", "./client", show_index=False)
+
+async def index(request):
+    return web.FileResponse("./client/index.html")
+
+app.router.add_get("/", index)
+
+app.add_routes([
+    web.post("/login", login),
+    web.get("/ws", websocket_handler),
+])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    web.run_app(app, host="0.0.0.0", port=port)
+    sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    sslctx.load_cert_chain("certs/fullchain.pem", "certs/privkey.pem")
+    web.run_app(app, host="localhost", port=8443, ssl_context=sslctx)
