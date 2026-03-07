@@ -75,6 +75,10 @@ function connectWS() {
     if (msg.type === "typing") {
       showTyping(msg.data.user, msg.data.isTyping);
     }
+
+    if (msg.type === "file") {
+      addFileMessage(msg.data);
+    }
   };
 
   ws.onclose = () => {
@@ -86,6 +90,7 @@ function connectWS() {
 document.getElementById("sendBtn").onclick = sendMessage;
 
 const msgInput = document.getElementById("msgInput");
+const fileInput = document.getElementById("fileInput");
 
 msgInput.addEventListener("keydown", e => {
   if (e.key === "Enter") sendMessage();
@@ -105,6 +110,61 @@ msgInput.addEventListener("input", () => {
     ws.send(JSON.stringify({ type: "typing", isTyping: false }));
   }, 800);
 });
+
+// When a file is selected, upload and send
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  try {
+    await uploadAndSendFile(file);
+    fileInput.value = "";
+  } catch (e) {
+    console.error(e);
+    alert("File upload failed");
+  }
+});
+
+async function uploadAndSendFile(file) {
+  if (!token) {
+    alert("Not authenticated");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("/upload", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + token
+    },
+    body: formData
+  });
+
+  if (!res.ok) {
+    throw new Error("Upload failed");
+  }
+
+  const info = await res.json();
+
+  ws.send(JSON.stringify({
+    type: "file",
+    fileId: info.fileId,
+    filename: info.filename,
+    size: info.size,
+    hash: info.hash
+  }));
+
+  // Optionally show a local "sent file" message
+  addFileMessage({
+    from: username,
+    fileId: info.fileId,
+    filename: info.filename,
+    size: info.size,
+    hash: info.hash
+  });
+}
 
 function sendMessage() {
   const now = Date.now();
@@ -142,6 +202,33 @@ function addMessage(user, text, isMe = false) {
       <span style="font-size:12px;color:#666;">${timestamp}</span>
     </div>
     <div>${text}</div>
+  `;
+
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function addFileMessage(data) {
+  const div = document.createElement("div");
+  div.className = "msg";
+
+  const timestamp = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+  const sizeKb = Math.round(data.size / 1024);
+
+  div.innerHTML = `
+    <div>
+      <strong>${data.from}</strong>
+      <span style="font-size:12px;color:#666;">${timestamp}</span>
+    </div>
+    <div>
+      <a href="/download?file_id=${encodeURIComponent(data.fileId)}" target="_blank">
+        File: ${data.filename} (${sizeKb} KB)
+      </a>
+    </div>
   `;
 
   messages.appendChild(div);

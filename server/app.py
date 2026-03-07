@@ -2,6 +2,8 @@ import asyncio
 import ssl
 import time
 import json
+import os
+import hashlib
 
 from aiohttp import web, WSMsgType
 import jwt
@@ -14,20 +16,27 @@ PING_INTERVAL = 20
 USERS = {
     "Jonathan Guerrero": "JonathanPass",
     "bob": "bobpass",
+    "alice": "alicepass",
 }
 
 CONNECTED = {}  # ws -> username
+
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 def make_jwt(username):
     now = int(time.time())
     payload = {"sub": username, "iat": now, "exp": now + JWT_EXP_SECONDS}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
+
 def verify_jwt(token):
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])["sub"]
     except:
         return None
+
 
 async def login(request):
     data = await request.json()
@@ -39,6 +48,7 @@ async def login(request):
 
     token = make_jwt(username)
     return web.json_response({"token": token})
+
 
 async def broadcast(event, data, exclude=None):
     msg = json.dumps({"type": event, "data": data})
@@ -54,6 +64,66 @@ async def broadcast(event, data, exclude=None):
 
     for ws in dead:
         CONNECTED.pop(ws, None)
+
+
+async def upload_file(request):
+    # JWT from Authorization: Bearer <token>
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "")
+    user = verify_jwt(token)
+    if not user:
+        return web.Response(status=401, text="Unauthorized")
+
+    reader = await request.multipart()
+    field = await reader.next()
+    if not field or field.name != "file":
+        return web.Response(status=400, text="No file field")
+
+    filename = field.filename
+    file_id = os.urandom(16).hex()
+    path = os.path.join(UPLOAD_DIR, file_id)
+
+    hasher = hashlib.sha256()
+    size = 0
+
+    with open(path, "wb") as f:
+        while True:
+            chunk = await field.read_chunk()
+            if not chunk:
+                break
+            f.write(chunk)
+            hasher.update(chunk)
+            size += len(chunk)
+
+    file_hash = hasher.hexdigest()
+
+    return web.json_response({
+        "fileId": file_id,
+        "filename": filename,
+        "size": size,
+        "hash": file_hash,
+        "from": user,
+    })
+
+
+async def download_file(request):
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "")
+    user = verify_jwt(token)
+    if not user:
+        return web.Response(status=401, text="Unauthorized")
+
+    file_id = request.query.get("file_id")
+    if not file_id:
+        return web.Response(status=400, text="Missing file_id")
+
+    path = os.path.join(UPLOAD_DIR, file_id)
+    if not os.path.exists(path):
+        return web.Response(status=404, text="Not found")
+
+    # Later: enforce per-file ACLs if you want
+    return web.FileResponse(path)
+
 
 async def websocket_handler(request):
     token = request.query.get("token")
@@ -100,6 +170,16 @@ async def websocket_handler(request):
                     await broadcast("chat", {"from": user, "text": payload["text"]}, exclude=ws)
                     continue
 
+                if mtype == "file":
+                    # Broadcast file metadata as a chat event
+                    await broadcast("file", {
+                        "from": user,
+                        "fileId": payload["fileId"],
+                        "filename": payload["filename"],
+                        "size": payload["size"],
+                        "hash": payload["hash"],
+                    })
+                    continue
 
     finally:
         old_user = CONNECTED.pop(ws, None)
@@ -111,18 +191,23 @@ async def websocket_handler(request):
 
     return ws
 
+
 app = web.Application()
 
-app.router.add_static("/client/", "./client", show_index=False)
+app.router.add_static("/static/", "./client", show_index=True)
+
 
 async def index(request):
     return web.FileResponse("./client/index.html")
+
 
 app.router.add_get("/", index)
 
 app.add_routes([
     web.post("/login", login),
     web.get("/ws", websocket_handler),
+    web.post("/upload", upload_file),
+    web.get("/download", download_file),
 ])
 
 if __name__ == "__main__":
