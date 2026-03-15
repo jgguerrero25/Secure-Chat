@@ -1,0 +1,8 @@
+{
+  "Bob": {
+    "password_hash": "$2b$12$xBwpBedTPJtqNtuMEAeGx.rbIoIIWrDPBDm8OV6viaDXhtLnMVgFm"
+  },
+  "Alice": {
+    "password_hash": "$2b$12$LmNJq.OiAPgNjInL6BAX.OZdo2oli5nfQbf5h.u1Y5jjjTBasnHvm"
+  }
+}

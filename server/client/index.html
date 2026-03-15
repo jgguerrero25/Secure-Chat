@@ -2,134 +2,67 @@
 <html>
 <head>
   <meta charset="UTF-8">
-
   <link rel="stylesheet" href="/static/style.css">
-
   <title>SecureChat</title>
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f2f2f2;
-    }
-
-    #loginScreen, #chatScreen {
-      width: 100%;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    #loginBox {
-      background: white;
-      padding: 25px;
-      border-radius: 8px;
-      box-shadow: 0 0 10px #ccc;
-      width: 300px;
-    }
-
-    #chatScreen {
-      display: none;
-      flex-direction: column;
-    }
-
-    #topBar {
-      background: #0078ff;
-      color: white;
-      padding: 10px 15px;
-      font-size: 20px;
-      font-weight: bold;
-    }
-
-    #mainArea {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-
-    #onlinePanel {
-      width: 180px;
-      background: #fff;
-      border-right: 1px solid #ccc;
-      padding: 10px;
-    }
-
-    #messages {
-      flex: 1;
-      padding: 15px;
-      overflow-y: auto;
-      background: #f9f9f9;
-    }
-
-    .msg {
-      background: #d9ecff;
-      padding: 10px;
-      margin-bottom: 10px;
-      border-radius: 6px;
-      max-width: 70%;
-    }
-
-    .msg.me {
-      background: #c8ffd4;
-      margin-left: auto;
-    }
-
-    .system {
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-      margin: 10px 0;
-    }
-
-    #typingIndicator {
-      padding: 5px 15px;
-      color: #666;
-      font-size: 14px;
-      height: 20px;
-    }
-
-    #inputBar {
-      display: flex;
-      padding: 10px;
-      background: #fff;
-      border-top: 1px solid #ccc;
-    }
-
-    #msgInput {
-      flex: 1;
-      padding: 10px;
-      font-size: 16px;
-    }
-
-    #sendBtn {
-      padding: 10px 20px;
-      margin-left: 10px;
-      background: #0078ff;
-      color: white;
-      border: none;
-      cursor: pointer;
-      border-radius: 4px;
-    }
+    body { margin:0; font-family:Arial,sans-serif; background:#f2f2f2; }
+    #loginScreen, #chatScreen { width:100%; height:100vh; display:flex; justify-content:center; align-items:center; }
+    #loginBox { background:white; padding:25px; border-radius:8px; box-shadow:0 0 10px #ccc; width:300px; }
+    #chatScreen { display:none; flex-direction:column; }
+    #topBar { background:#0078ff; color:white; padding:10px 15px; font-size:20px; font-weight:bold; }
+    #mainArea { display:flex; flex:1; overflow:hidden; }
+    #onlinePanel { width:180px; background:#fff; border-right:1px solid #ccc; padding:10px; }
+    #onlinePanel h3 { font-size:13px; color:#555; margin-bottom:6px; }
+    #messages { flex:1; padding:15px; overflow-y:auto; background:#f9f9f9; }
+    .msg { background:#d9ecff; padding:10px; margin-bottom:10px; border-radius:6px; max-width:70%; }
+    .msg.me { background:#c8ffd4; margin-left:auto; }
+    .system { text-align:center; color:#666; font-size:14px; margin:10px 0; }
+    #typingIndicator { padding:5px 15px; color:#666; font-size:14px; height:20px; }
+    #inputBar { display:flex; padding:10px; background:#fff; border-top:1px solid #ccc; align-items:center; gap:6px; }
+    #msgInput { flex:1; padding:10px; font-size:16px; }
+    #sendBtn { padding:10px 20px; background:#0078ff; color:white; border:none; cursor:pointer; border-radius:4px; }
+    /* NEW: style register button */
+    #registerBtn { width:100%; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
   </style>
 </head>
 <body>
 
+<!-- Login screen -->
 <div id="loginScreen">
   <div id="loginBox">
     <h2>SecureChat Login</h2>
-    <input id="user" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;">
-    <input id="pass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:10px;">
-    <button id="loginBtn" style="width:100%;padding:10px;background:#0078ff;color:white;border:none;">Login</button>
+    <input id="user" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <input id="pass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <button id="loginBtn" style="width:100%;padding:10px;background:#0078ff;color:white;border:none;border-radius:4px;cursor:pointer;">Login</button>
+    <p style="text-align:center;margin:10px 0 0;font-size:13px;color:#555;">
+      No account? <a href="#" id="goRegister">Create one</a>
+    </p>
+  </div>
+</div>
+
+<!-- Register screen -->
+<div id="registerScreen" style="display:none;width:100%;height:100vh;justify-content:center;align-items:center;">
+  <div id="loginBox">
+    <h2>Create Account</h2>
+    <input id="regUser" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <input id="regPass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:11px;color:#888;margin:0 0 10px;">Min 8 chars, 1 uppercase, 1 number, 1 special character (!@#$%^&*)</p>
+    <input id="regPass2" type="password" placeholder="Confirm password" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <button id="registerBtn" style="width:100%;padding:10px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">Create Account</button>
+    <p style="text-align:center;margin:10px 0 0;font-size:13px;color:#555;">
+      Already have an account? <a href="#" id="goLogin">Log in</a>
+    </p>
   </div>
 </div>
 
 <div id="chatScreen">
+  <!-- UPDATED: topBar text is now set dynamically by JS when a peer is selected -->
   <div id="topBar">SecureChat</div>
 
   <div id="mainArea">
     <div id="onlinePanel">
-      <h3>Online</h3>
+      <!-- UPDATED: hint to click a user -->
+      <h3>Online — click to chat</h3>
       <ul id="onlineList"></ul>
     </div>
 
@@ -137,8 +70,12 @@
       <div id="messages"></div>
       <div id="typingIndicator"></div>
 
+      <!-- input bar unchanged -->
       <div id="inputBar">
         <input id="fileInput" type="file" style="margin-right:8px;">
+        <button id="emojiBtn">😊</button>
+        <button id="boldBtn"><b>B</b></button>
+        <button id="italicBtn"><i>I</i></button>
         <input id="msgInput" placeholder="Type a message...">
         <button id="sendBtn">Send</button>
       </div>
