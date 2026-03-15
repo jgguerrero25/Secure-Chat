@@ -7,7 +7,7 @@ class UserSelect(QWidget):
 
         layout = QVBoxLayout()
 
-        # Example users — later you load these from your DB
+        
         for user in ["Jonathan", "Bob", "Alice"]:
             btn = QPushButton(user)
             btn.clicked.connect(lambda _, u=user: on_user_selected(u))

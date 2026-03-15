@@ -3,4 +3,3 @@ PyJWT
 bcrypt
 cryptography
 PySide6
-PySide6-WebEngine

@@ -21,13 +21,11 @@
     #inputBar { display:flex; padding:10px; background:#fff; border-top:1px solid #ccc; align-items:center; gap:6px; }
     #msgInput { flex:1; padding:10px; font-size:16px; }
     #sendBtn { padding:10px 20px; background:#0078ff; color:white; border:none; cursor:pointer; border-radius:4px; }
-    /* NEW: style register button */
     #registerBtn { width:100%; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
   </style>
 </head>
 <body>
 
-<!-- Login screen -->
 <div id="loginScreen">
   <div id="loginBox">
     <h2>SecureChat Login</h2>
@@ -56,12 +54,10 @@
 </div>
 
 <div id="chatScreen">
-  <!-- UPDATED: topBar text is now set dynamically by JS when a peer is selected -->
   <div id="topBar">SecureChat</div>
 
   <div id="mainArea">
     <div id="onlinePanel">
-      <!-- UPDATED: hint to click a user -->
       <h3>Online — click to chat</h3>
       <ul id="onlineList"></ul>
     </div>

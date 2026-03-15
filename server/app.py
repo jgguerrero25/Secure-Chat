@@ -31,13 +31,12 @@ LOCKOUT_SECONDS    = 300
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
-CONNECTED      = {}   # ws -> {"user": str, "peer": str|None}
+CONNECTED      = {}   
 LOGIN_ATTEMPTS = defaultdict(lambda: {"count": 0, "locked_until": 0})
-USER_KEYS      = {}   # username -> {"private": key, "public_pem": bytes}
-FILE_META      = {}   # file_id  -> {filename, size, hash, key_tag}
-SESSION_LOGS   = {}   # (user_a, user_b) -> open file handle
+USER_KEYS      = {}   
+FILE_META      = {}  
+SESSION_LOGS   = {}   
 
-# ── User DB (replaces hardcoded USERS dict) ────────────────────────────────────
 def load_users():
     if not os.path.exists(USERS_FILE):
         return {}
@@ -48,7 +47,6 @@ def save_users(users):
     with open(USERS_FILE, "w") as f:
         json.dump(users, f, indent=2)
 
-# ── JWT (unchanged) ────────────────────────────────────────────────────────────
 def make_jwt(username):
     now = int(time.time())
     payload = {"sub": username, "iat": now, "exp": now + JWT_EXP_SECONDS}
@@ -60,7 +58,6 @@ def verify_jwt(token):
     except:
         return None
 
-# ── Brute-force helpers ────────────────────────────────────────────────────────
 def is_locked(key):
     return LOGIN_ATTEMPTS[key]["locked_until"] > time.time()
 
@@ -135,7 +132,6 @@ def decrypt_msg(recipient, payload):
         base64.b64decode(payload["nonce"]), base64.b64decode(payload["ciphertext"]), None
     ).decode()
 
-# ── File encryption ────────────────────────────────────────────────────────────
 def encrypt_file(src, dst):
     key, nonce = os.urandom(32), os.urandom(12)
     with open(src, "rb") as f: data = f.read()
@@ -147,7 +143,6 @@ def decrypt_file(path, key_tag):
     with open(path, "rb") as f: ct = f.read()
     return AESGCM(raw[12:]).decrypt(raw[:12], ct, None)
 
-# ── NEW: /register ─────────────────────────────────────────────────────────────
 async def register(request):
     data     = await request.json()
     username = data.get("username", "").strip()
@@ -171,7 +166,6 @@ async def register(request):
     save_users(users)
     return web.json_response({"ok": True}, status=201)
 
-# ── UPDATED: /login — hashed passwords + brute-force protection ───────────────
 async def login(request):
     data     = await request.json()
     username = data.get("username", "").strip()
@@ -191,14 +185,12 @@ async def login(request):
     reset_attempts(ip); reset_attempts(username)
     return web.json_response({"token": make_jwt(username), "username": username})
 
-# ── NEW: /users ────────────────────────────────────────────────────────────────
 async def get_users(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not verify_jwt(auth):
         return web.Response(status=401)
     return web.json_response({"users": list(load_users().keys())})
 
-# ── broadcast (unchanged) ──────────────────────────────────────────────────────
 async def broadcast(event, data, exclude=None):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -208,7 +200,6 @@ async def broadcast(event, data, exclude=None):
         except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
-# ── NEW: send to one specific user ────────────────────────────────────────────
 async def send_to(username, event, data):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -218,7 +209,6 @@ async def send_to(username, event, data):
             except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
-# ── UPDATED: upload_file — encrypts file at rest ──────────────────────────────
 async def upload_file(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     user = verify_jwt(auth)
