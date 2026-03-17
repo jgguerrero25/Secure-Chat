@@ -4,5 +4,8 @@
   },
   "Alice": {
     "password_hash": "$2b$12$LmNJq.OiAPgNjInL6BAX.OZdo2oli5nfQbf5h.u1Y5jjjTBasnHvm"
+  },
+  "Jonathan Guerrero": {
+    "password_hash": "$2b$12$Xp4wuW.Nr4Ty40W6QyzXsegumk85db0qGGiB62iFm3pKwz624PJS."
   }
 }
