@@ -1,0 +1,5 @@
+=== Session opened 2026-03-14T17:22:05.382523 ===
+[17:22:12] Alice -> Bob: Hi bob
+[17:22:16] Bob -> Alice: Hi alice
+[17:22:36] Bob -> Alice: how are you doing
+=== Session closed 2026-03-14T17:22:39.733152 ===

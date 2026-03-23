@@ -1,0 +1,17 @@
+{
+  "Bob": {
+    "password_hash": "$2b$12$xBwpBedTPJtqNtuMEAeGx.rbIoIIWrDPBDm8OV6viaDXhtLnMVgFm"
+  },
+  "Alice": {
+    "password_hash": "$2b$12$LmNJq.OiAPgNjInL6BAX.OZdo2oli5nfQbf5h.u1Y5jjjTBasnHvm"
+  },
+  "Jonathan Guerrero": {
+    "password_hash": "$2b$12$Xp4wuW.Nr4Ty40W6QyzXsegumk85db0qGGiB62iFm3pKwz624PJS."
+  },
+  "Tim": {
+    "password_hash": "$2b$12$tEHzmOkBz6i43XUL16RNaett4sN2A9YkFqShdpHCs7mHKa4fRM2W6"
+  },
+  "Sam": {
+    "password_hash": "$2b$12$e32YA7Z/dyHSrZqSS5AhF.WPH.JabMj7inWIx6T5O.86NLiIbshYO"
+  }
+}
