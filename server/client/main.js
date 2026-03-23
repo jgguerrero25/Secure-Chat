@@ -1,9 +1,10 @@
 let token = null;
 let ws = null;
 let username = null;
-let currentPeer = null;       
-let peerPublicKeys = {};      
-let myPrivateKey = null;      
+let currentPeer = null;
+let peerPublicKeys = {};
+let myPrivateKey = null;
+let myPublicKeyPem = null;      
 
 let lastSent = 0;
 const SEND_COOLDOWN = 1000;

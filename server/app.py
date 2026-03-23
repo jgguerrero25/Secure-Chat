@@ -330,10 +330,9 @@ async def websocket_handler(request):
             elif mtype == "chat":
                 peer = CONNECTED[ws].get("peer")
                 if not peer: continue
-                text = payload.get("text", "")
-                enc  = encrypt_msg(peer, text)
+                text = payload.get("text", "[encrypted]")
                 log_msg(user, peer, text)
-                await send_to(peer, "chat", {"from": user, **enc})
+                await send_to(peer, "chat", {"from": user, **{k: v for k, v in payload.items() if k != "type"}})
 
             elif mtype == "file":
                 peer = CONNECTED[ws].get("peer")
