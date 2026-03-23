@@ -1,9 +1,9 @@
 let token = null;
 let ws = null;
 let username = null;
-let currentPeer = null;       // NEW: who we're chatting with
-let peerPublicKeys = {};      // NEW: username -> CryptoKey
-let myPrivateKey = null;      // NEW: our RSA private key (WebCrypto)
+let currentPeer = null;       
+let peerPublicKeys = {};      
+let myPrivateKey = null;      
 
 let lastSent = 0;
 const SEND_COOLDOWN = 1000;
@@ -32,7 +32,8 @@ async function generateKeyPair() {
   myPrivateKey = kp.privateKey;
   const spki = await crypto.subtle.exportKey("spki", kp.publicKey);
   const b64  = btoa(String.fromCharCode(...new Uint8Array(spki)));
-  return `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g).join("\n")}\n-----END PUBLIC KEY-----\n`;
+  myPublicKeyPem = `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g).join("\n")}\n-----END PUBLIC KEY-----\n`;
+  return myPublicKeyPem;
 }
 
 async function importPublicKey(pem) {
@@ -149,7 +150,7 @@ document.getElementById("registerBtn").onclick = async () => {
   loginScreen.style.display    = "flex";
 };
 
-// Auto-login when called from desktop app
+// ── Auto-login when called from desktop app ───────────────────────────────────
 function autoLoginFromDesktop(tkn, user) {
   token    = tkn;
   username = user;
@@ -170,13 +171,11 @@ function connectWS() {
   ws.onmessage = async (event) => {
     const msg = JSON.parse(event.data);
 
-    // UPDATED: session_init replaces online_list
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";
       msg.data.users.forEach(u => updateOnline(u, true));
     }
 
-    // NEW: peer's public key arrived — import it
     if (msg.type === "peer_key") {
       peerPublicKeys[msg.data.user] = await importPublicKey(msg.data.public_key);
     }
@@ -212,7 +211,7 @@ function connectWS() {
   };
 }
 
-// ── NEW: select a peer to chat with ───────────────────────────────────────────
+// ── Select a peer to chat with ────────────────────────────────────────────────
 function selectPeer(peer) {
   currentPeer = peer;
   document.getElementById("topBar").textContent = `SecureChat — ${peer}`;
@@ -221,7 +220,6 @@ function selectPeer(peer) {
   ws.send(JSON.stringify({ type: "select_peer", peer }));
 }
 
-// ── UPDATED: sendMessage — encrypts before sending ────────────────────────────
 document.getElementById("sendBtn").onclick = sendMessage;
 
 msgInput.addEventListener("keydown", e => {
@@ -245,7 +243,6 @@ async function sendMessage() {
   lastSent = now;
 }
 
-// ── Typing indicator (unchanged) ───────────────────────────────────────────────
 msgInput.addEventListener("input", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (!isTyping) {
@@ -259,7 +256,7 @@ msgInput.addEventListener("input", () => {
   }, 800);
 });
 
-// ── Emoji picker (unchanged) ───────────────────────────────────────────────────
+// ── Emoji picker ──────────────────────────────────────────────────────────────
 const EMOJIS = ["😀","😂","😍","😎","😭","👍","🔥","❤️","🎉","🤔"];
 
 emojiBtn.addEventListener("click", () => {
@@ -284,7 +281,6 @@ emojiBtn.addEventListener("click", () => {
   });
 });
 
-// ── Formatting buttons (unchanged) ────────────────────────────────────────────
 function InsertAroundAtCursor(startTag, endTag) {
   const input = msgInput;
   const start = input.selectionStart, end = input.selectionEnd;
@@ -294,7 +290,7 @@ function InsertAroundAtCursor(startTag, endTag) {
 boldBtn.addEventListener("click",   () => InsertAroundAtCursor("**", "**"));
 italicBtn.addEventListener("click", () => InsertAroundAtCursor("*",  "*"));
 
-// ── File upload (unchanged logic, just needs currentPeer check) ───────────────
+// ── File upload ───────────────────────────────────────────────────────────────
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
@@ -317,7 +313,7 @@ async function uploadAndSendFile(file) {
   addFileMessage({ from: username, ...info });
 }
 
-// ── UPDATED: updateOnline — clicking a user starts a DM ──────────────────────
+// ── Online users ──────────────────────────────────────────────────────────────
 function updateOnline(user, add) {
   if (add) {
     if (document.getElementById(`user-${user}`)) return;
@@ -334,7 +330,6 @@ function updateOnline(user, add) {
   }
 }
 
-// ── addMessage, addFileMessage, addSystem, showTyping (unchanged) ─────────────
 function formatMessage(text) {
   text = text.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   text = text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
@@ -351,13 +346,35 @@ function addMessage(user, text, isMe = false) {
   messages.scrollTop = messages.scrollHeight;
 }
 
+// ── FIXED: file download with auth token ─────────────────────────────────────
 function addFileMessage(data) {
-  const div = document.createElement("div");
-  div.className = "msg";
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const sizeKb = Math.round(data.size / 1024);
-  div.innerHTML = `<div><strong>${data.from}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div><a href="/download?file_id=${encodeURIComponent(data.fileId)}" target="_blank">File: ${data.filename} (${sizeKb} KB)</a></div>`;
-  messages.appendChild(div);
+
+  const msgDiv = document.createElement("div");
+  msgDiv.className = "msg";
+  msgDiv.innerHTML = `<div><strong>${data.from}</strong><span style="font-size:12px;color:#666;">${ts}</span></div>`;
+
+  const link = document.createElement("a");
+  link.href = "#";
+  link.textContent = `File: ${data.filename} (${sizeKb} KB)`;
+  link.onclick = async (e) => {
+    e.preventDefault();
+    const res = await fetch(`/download?file_id=${encodeURIComponent(data.fileId)}`, {
+      headers: { "Authorization": "Bearer " + token }
+    });
+    if (!res.ok) { alert("Download failed."); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = data.filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  msgDiv.appendChild(link);
+  messages.appendChild(msgDiv);
   messages.scrollTop = messages.scrollHeight;
 }
 
@@ -375,6 +392,7 @@ function showTyping(user, state) {
   typingIndicator.textContent = state ? `${user} is typing...` : "";
 }
 
+// ── Animated background (added by teammate) ───────────────────────────────────
 const canvas = document.getElementById("bg");
 const ctx = canvas.getContext("2d");
 const toggleBtn = document.getElementById("bgToggle");
@@ -386,12 +404,10 @@ let mode = MODES[modeIndex];
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
-
   canvas.style.position = "fixed";
   canvas.style.top = "0";
   canvas.style.left = "0";
   canvas.style.zIndex = "-1";
-
   toggleBtn.style.position = "fixed";
   toggleBtn.style.top = "10px";
   toggleBtn.style.right = "10px";
@@ -422,7 +438,6 @@ function drawParticles() {
     p.y += p.dy;
     if (p.x < 0 || p.x > canvas.width) p.dx *= -1;
     if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
-
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,120,255,0.7)";
@@ -432,22 +447,13 @@ function drawParticles() {
 
 let t = 0;
 function drawGradient() {
-  const w = canvas.width;
-  const h = canvas.height;
-
-  const gradient = ctx.createLinearGradient(
-    0, 0,
-    w * Math.cos(t * 0.001),
-    h * Math.sin(t * 0.001)
-  );
-
+  const w = canvas.width, h = canvas.height;
+  const gradient = ctx.createLinearGradient(0, 0, w * Math.cos(t * 0.001), h * Math.sin(t * 0.001));
   gradient.addColorStop(0, "#0078ff");
   gradient.addColorStop(0.5, "#00c6ff");
   gradient.addColorStop(1, "#6a11cb");
-
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, w, h);
-
   t++;
 }
 
@@ -463,17 +469,12 @@ function initMatrix() {
 function drawMatrix() {
   ctx.fillStyle = "rgba(0,0,0,0.05)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
   ctx.fillStyle = "#00ff88";
   ctx.font = fontSize + "px monospace";
-
   drops.forEach((y, i) => {
     const text = letters[Math.floor(Math.random() * letters.length)];
     ctx.fillText(text, i * fontSize, y * fontSize);
-
-    if (y * fontSize > canvas.height && Math.random() > 0.975) {
-      drops[i] = 0;
-    }
+    if (y * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
     drops[i]++;
   });
 }
@@ -482,7 +483,6 @@ function animate() {
   if (mode === "particles") drawParticles();
   else if (mode === "gradient") drawGradient();
   else if (mode === "matrix") drawMatrix();
-
   requestAnimationFrame(animate);
 }
 
@@ -490,10 +490,8 @@ toggleBtn.onclick = () => {
   modeIndex = (modeIndex + 1) % MODES.length;
   mode = MODES[modeIndex];
   localStorage.setItem("bgModeIndex", modeIndex);
-
   if (mode === "particles") initParticles();
   if (mode === "matrix") initMatrix();
-
   updateButton();
 };
 
@@ -503,6 +501,5 @@ function updateButton() {
 
 initParticles();
 initMatrix();
-
 updateButton();
 animate();
