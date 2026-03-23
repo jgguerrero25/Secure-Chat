@@ -1,9 +1,9 @@
 let token = null;
 let ws = null;
 let username = null;
-let currentPeer = null;       
-let peerPublicKeys = {};      
-let myPrivateKey = null;      
+let currentPeer = null;       // NEW: who we're chatting with
+let peerPublicKeys = {};      // NEW: username -> CryptoKey
+let myPrivateKey = null;      // NEW: our RSA private key (WebCrypto)
 
 let lastSent = 0;
 const SEND_COOLDOWN = 1000;
@@ -149,6 +149,16 @@ document.getElementById("registerBtn").onclick = async () => {
   loginScreen.style.display    = "flex";
 };
 
+// Auto-login when called from desktop app
+function autoLoginFromDesktop(tkn, user) {
+  token    = tkn;
+  username = user;
+  loginScreen.style.display    = "none";
+  registerScreen.style.display = "none";
+  chatScreen.style.display     = "flex";
+  generateKeyPair().then(() => connectWS());
+}
+
 function connectWS() {
   if (ws) { try { ws.close(); } catch {} }
   ws = new WebSocket(`wss://${location.host}/ws?token=${token}`);
@@ -160,6 +170,7 @@ function connectWS() {
   ws.onmessage = async (event) => {
     const msg = JSON.parse(event.data);
 
+    // UPDATED: session_init replaces online_list
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";
       msg.data.users.forEach(u => updateOnline(u, true));
@@ -234,6 +245,7 @@ async function sendMessage() {
   lastSent = now;
 }
 
+// ── Typing indicator (unchanged) ───────────────────────────────────────────────
 msgInput.addEventListener("input", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   if (!isTyping) {
@@ -247,7 +259,7 @@ msgInput.addEventListener("input", () => {
   }, 800);
 });
 
-// ── Emoji picker 
+// ── Emoji picker (unchanged) ───────────────────────────────────────────────────
 const EMOJIS = ["😀","😂","😍","😎","😭","👍","🔥","❤️","🎉","🤔"];
 
 emojiBtn.addEventListener("click", () => {
@@ -272,6 +284,7 @@ emojiBtn.addEventListener("click", () => {
   });
 });
 
+// ── Formatting buttons (unchanged) ────────────────────────────────────────────
 function InsertAroundAtCursor(startTag, endTag) {
   const input = msgInput;
   const start = input.selectionStart, end = input.selectionEnd;
@@ -321,6 +334,7 @@ function updateOnline(user, add) {
   }
 }
 
+// ── addMessage, addFileMessage, addSystem, showTyping (unchanged) ─────────────
 function formatMessage(text) {
   text = text.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   text = text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
