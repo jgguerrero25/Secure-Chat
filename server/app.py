@@ -357,10 +357,13 @@ async def websocket_handler(request):
 
 # ── App setup (same as original + /register and /users) ───────────────────────
 app = web.Application()
-app.router.add_static("/static/", "./client", show_index=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CLIENT_DIR = os.path.join(BASE_DIR, "client")
+
+app.router.add_static("/static/", CLIENT_DIR, show_index=True)
 
 async def index(request):
-    return web.FileResponse("./client/index.html")
+    return web.FileResponse(os.path.join(CLIENT_DIR, "index.html"))
 
 app.router.add_get("/", index)
 app.add_routes([
