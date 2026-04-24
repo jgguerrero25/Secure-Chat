@@ -5,7 +5,7 @@ import ssl
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QScrollArea, QFrame
 from PySide6.QtCore import Qt, QTimer
 
-SERVER = "https://localhost:8443"
+SERVER = "https://secure-chat-1-avp9.onrender.com/"
 
 _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False

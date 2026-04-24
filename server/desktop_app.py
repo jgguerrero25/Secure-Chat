@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl
 
-SERVER = "https://localhost:8443"
+SERVER = "https://secure-chat-1-avp9.onrender.com/"
 
 _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False
@@ -114,7 +114,7 @@ class SecureChatWindow(QMainWindow):
         layout.addWidget(switch_btn)
 
         self.view = QWebEngineView()
-        self.view.load(QUrl("https://localhost:8443"))
+        self.view.load(QUrl("https://secure-chat-1-avp9.onrender.com/"))
         # Auto-login once page finishes loading
         self.view.loadFinished.connect(lambda: self.auto_login(token, username))
         layout.addWidget(self.view)
