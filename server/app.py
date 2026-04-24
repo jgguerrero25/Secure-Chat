@@ -12,6 +12,8 @@ from collections import defaultdict
 from aiohttp import web, WSMsgType
 import jwt
 import bcrypt
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -31,22 +33,57 @@ LOCKOUT_SECONDS    = 300
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
-CONNECTED      = {}   
+# ── Database setup ────────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def get_db():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS users "
+        "(username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+CONNECTED      = {}   # ws -> {"user": str, "peer": str|None}
 LOGIN_ATTEMPTS = defaultdict(lambda: {"count": 0, "locked_until": 0})
-USER_KEYS      = {}   
-FILE_META      = {}  
-SESSION_LOGS   = {}   
+USER_KEYS      = {}   # username -> {"private": key, "public_pem": bytes}
+FILE_META      = {}   # file_id  -> {filename, size, hash, key_tag}
+SESSION_LOGS   = {}   # (user_a, user_b) -> open file handle
 
+# ── User DB (PostgreSQL) ──────────────────────────────────────────────────────
 def load_users():
-    if not os.path.exists(USERS_FILE):
-        return {}
-    with open(USERS_FILE) as f:
-        return json.load(f)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, password_hash FROM users")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {row["username"]: {"password_hash": row["password_hash"]} for row in rows}
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f, indent=2)
+def save_user(username, password_hash):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, password_hash))
+    conn.commit()
+    cur.close()
+    conn.close()
 
+def get_user(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, password_hash FROM users WHERE username = %s", (username,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+# ── JWT (unchanged) ────────────────────────────────────────────────────────────
 def make_jwt(username):
     now = int(time.time())
     payload = {"sub": username, "iat": now, "exp": now + JWT_EXP_SECONDS}
@@ -58,6 +95,7 @@ def verify_jwt(token):
     except:
         return None
 
+# ── Brute-force helpers ────────────────────────────────────────────────────────
 def is_locked(key):
     return LOGIN_ATTEMPTS[key]["locked_until"] > time.time()
 
@@ -132,6 +170,7 @@ def decrypt_msg(recipient, payload):
         base64.b64decode(payload["nonce"]), base64.b64decode(payload["ciphertext"]), None
     ).decode()
 
+# ── File encryption ────────────────────────────────────────────────────────────
 def encrypt_file(src, dst):
     key, nonce = os.urandom(32), os.urandom(12)
     with open(src, "rb") as f: data = f.read()
@@ -143,6 +182,7 @@ def decrypt_file(path, key_tag):
     with open(path, "rb") as f: ct = f.read()
     return AESGCM(raw[12:]).decrypt(raw[:12], ct, None)
 
+# ── NEW: /register ─────────────────────────────────────────────────────────────
 async def register(request):
     data     = await request.json()
     username = data.get("username", "").strip()
@@ -159,13 +199,12 @@ async def register(request):
         return web.json_response({"error": "password_no_number"}, status=400)
     if not re.search(r'[!@#$%^&*()\-_=+\[\]{}]', password):
         return web.json_response({"error": "password_no_special"}, status=400)
-    users = load_users()
-    if username in users:
+    if get_user(username):
         return web.json_response({"error": "username_taken"}, status=409)
-    users[username] = {"password_hash": bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()}
-    save_users(users)
+    save_user(username, bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode())
     return web.json_response({"ok": True}, status=201)
 
+# ── UPDATED: /login — hashed passwords + brute-force protection ───────────────
 async def login(request):
     data     = await request.json()
     username = data.get("username", "").strip()
@@ -176,8 +215,7 @@ async def login(request):
         if is_locked(key):
             return web.json_response({"error": "too_many_attempts"}, status=429)
 
-    users  = load_users()
-    record = users.get(username)
+    record = get_user(username)
     if not record or not bcrypt.checkpw(password.encode(), record["password_hash"].encode()):
         for key in (ip, username): record_fail(key)
         return web.json_response({"error": "invalid_credentials"}, status=401)
@@ -185,12 +223,14 @@ async def login(request):
     reset_attempts(ip); reset_attempts(username)
     return web.json_response({"token": make_jwt(username), "username": username})
 
+# ── NEW: /users ────────────────────────────────────────────────────────────────
 async def get_users(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not verify_jwt(auth):
         return web.Response(status=401)
     return web.json_response({"users": list(load_users().keys())})
 
+# ── broadcast (unchanged) ──────────────────────────────────────────────────────
 async def broadcast(event, data, exclude=None):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -200,6 +240,7 @@ async def broadcast(event, data, exclude=None):
         except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
+# ── NEW: send to one specific user ────────────────────────────────────────────
 async def send_to(username, event, data):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -209,6 +250,7 @@ async def send_to(username, event, data):
             except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
+# ── UPDATED: upload_file — encrypts file at rest ──────────────────────────────
 async def upload_file(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     user = verify_jwt(auth)
@@ -330,8 +372,10 @@ async def websocket_handler(request):
             elif mtype == "chat":
                 peer = CONNECTED[ws].get("peer")
                 if not peer: continue
+                # Log plaintext if available, otherwise log encrypted notice
                 text = payload.get("text", "[encrypted]")
                 log_msg(user, peer, text)
+                # Forward the message as-is (already encrypted by client)
                 await send_to(peer, "chat", {"from": user, **{k: v for k, v in payload.items() if k != "type"}})
 
             elif mtype == "file":
@@ -357,13 +401,10 @@ async def websocket_handler(request):
 
 # ── App setup (same as original + /register and /users) ───────────────────────
 app = web.Application()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CLIENT_DIR = os.path.join(BASE_DIR, "client")
-
-app.router.add_static("/static/", CLIENT_DIR, show_index=True)
+app.router.add_static("/static/", "./client", show_index=True)
 
 async def index(request):
-    return web.FileResponse(os.path.join(CLIENT_DIR, "index.html"))
+    return web.FileResponse("./client/index.html")
 
 app.router.add_get("/", index)
 app.add_routes([
@@ -376,15 +417,8 @@ app.add_routes([
 ])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8443))
-    
-    # Use SSL only if certs exist (local dev), otherwise let Render handle it
-    cert = "certs/fullchain.pem"
-    key  = "certs/privkey.pem"
-    
-    if os.path.exists(cert) and os.path.exists(key):
-        sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        sslctx.load_cert_chain(cert, key)
-        web.run_app(app, host="0.0.0.0", port=port, ssl_context=sslctx)
-    else:
-        web.run_app(app, host="0.0.0.0", port=port)
+    if DATABASE_URL:
+        init_db()
+    sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    sslctx.load_cert_chain("certs/fullchain.pem", "certs/privkey.pem")
+    web.run_app(app, host="0.0.0.0", port=8443, ssl_context=sslctx)
