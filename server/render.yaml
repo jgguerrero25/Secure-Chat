@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: securechat
+    runtime: python
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: python server/app.py
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 8443
