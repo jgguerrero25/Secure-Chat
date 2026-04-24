@@ -421,7 +421,19 @@ app.add_routes([
 
 if __name__ == "__main__":
     if DATABASE_URL:
-        init_db()
-    sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    sslctx.load_cert_chain("certs/fullchain.pem", "certs/privkey.pem")
-    web.run_app(app, host="0.0.0.0", port=8443, ssl_context=sslctx)
+        try:
+            init_db()
+        except Exception as e:
+            print(f"Warning: Could not connect to database: {e}")
+
+    port = int(os.environ.get("PORT", 8443))
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    cert = os.path.join(BASE_DIR, "certs/fullchain.pem")
+    key  = os.path.join(BASE_DIR, "certs/privkey.pem")
+
+    if os.path.exists(cert) and os.path.exists(key):
+        sslctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        sslctx.load_cert_chain(cert, key)
+        web.run_app(app, host="0.0.0.0", port=port, ssl_context=sslctx)
+    else:
+        web.run_app(app, host="0.0.0.0", port=port)
