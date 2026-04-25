@@ -206,3 +206,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 server/certs/
+
+dist/
+build/
+*.spec
+__pycache__/
