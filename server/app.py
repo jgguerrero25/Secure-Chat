@@ -37,7 +37,7 @@ os.makedirs(LOGS_DIR,   exist_ok=True)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor, sslmode='require')
 
 def init_db():
     conn = get_db()
