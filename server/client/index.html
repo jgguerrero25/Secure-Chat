@@ -1,686 +1,85 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
   <title>SecureChat</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --surface2: #22263a;
-      --border: #2e3350;
-      --accent: #4f8eff;
-      --accent2: #00d2aa;
-      --text: #e8eaf6;
-      --text2: #8b90b0;
-      --danger: #ff4f6a;
-      --success: #00d2aa;
-      --me-bubble: #1e3a5f;
-      --them-bubble: #1e2235;
-      --input-bg: #13161f;
-      --radius: 12px;
-      --sidebar-width: 260px;
-    }
-
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    /* ── Auth Screens ─────────────────────────────────────── */
-    .auth-screen {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--bg);
-      z-index: 100;
-    }
-
-    .auth-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 40px;
-      width: 380px;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.5);
-    }
-
-    .auth-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 28px;
-    }
-
-    .auth-logo-icon {
-      width: 36px;
-      height: 36px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-    }
-
-    .auth-logo-text {
-      font-size: 20px;
-      font-weight: 600;
-      letter-spacing: -0.5px;
-    }
-
-    .auth-title {
-      font-size: 26px;
-      font-weight: 600;
-      letter-spacing: -0.5px;
-      margin-bottom: 6px;
-    }
-
-    .auth-sub {
-      font-size: 14px;
-      color: var(--text2);
-      margin-bottom: 28px;
-    }
-
-    .input-group {
-      margin-bottom: 14px;
-    }
-
-    .input-group label {
-      display: block;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text2);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .input-group input {
-      width: 100%;
-      padding: 12px 14px;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      outline: none;
-    }
-
-    .input-group input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(79,142,255,0.15);
-    }
-
-    .input-group input.error {
-      border-color: var(--danger);
-      box-shadow: 0 0 0 3px rgba(255,79,106,0.15);
-    }
-
-    .input-hint {
-      font-size: 11px;
-      color: var(--text2);
-      margin-top: 5px;
-    }
-
-    .input-error {
-      font-size: 11px;
-      color: var(--danger);
-      margin-top: 5px;
-      display: none;
-    }
-
-    .btn-primary {
-      width: 100%;
-      padding: 13px;
-      background: linear-gradient(135deg, var(--accent), #3a6fd8);
-      color: white;
-      border: none;
-      border-radius: var(--radius);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 6px;
-      transition: opacity 0.2s, transform 0.1s;
-      letter-spacing: -0.2px;
-    }
-
-    .btn-primary:hover { opacity: 0.9; }
-    .btn-primary:active { transform: scale(0.98); }
-
-    .btn-secondary {
-      width: 100%;
-      padding: 13px;
-      background: transparent;
-      color: var(--accent2);
-      border: 1.5px solid var(--accent2);
-      border-radius: var(--radius);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 8px;
-      transition: background 0.2s;
-      letter-spacing: -0.2px;
-    }
-
-    .btn-secondary:hover { background: rgba(0,210,170,0.08); }
-
-    .auth-switch {
-      text-align: center;
-      margin-top: 20px;
-      font-size: 13px;
-      color: var(--text2);
-    }
-
-    .auth-switch a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .auth-switch a:hover { text-decoration: underline; }
-
-    /* ── Chat Screen ──────────────────────────────────────── */
-    #chatScreen {
-      display: none;
-      height: 100vh;
-      flex-direction: row;
-    }
-
-    /* Sidebar */
-    #sidebar {
-      width: var(--sidebar-width);
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-    }
-
-    #sidebarHeader {
-      padding: 20px 16px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .sidebar-logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    .sidebar-logo-icon {
-      width: 28px;
-      height: 28px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-    }
-
-    .sidebar-logo-text {
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .user-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: var(--surface2);
-      border-radius: 8px;
-    }
-
-    .user-avatar {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .user-name {
-      font-size: 13px;
-      font-weight: 500;
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .online-dot {
-      width: 7px;
-      height: 7px;
-      background: var(--accent2);
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    #sidebarLabel {
-      padding: 16px 16px 8px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text2);
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-    }
-
-    #onlineList {
-      list-style: none;
-      flex: 1;
-      overflow-y: auto;
-      padding: 0 8px;
-    }
-
-    #onlineList li {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: background 0.15s;
-      margin-bottom: 2px;
-    }
-
-    #onlineList li:hover { background: var(--surface2); }
-
-    #onlineList li.active {
-      background: rgba(79,142,255,0.15);
-      color: var(--accent);
-    }
-
-    .peer-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .peer-name {
-      font-size: 14px;
-      font-weight: 500;
-      flex: 1;
-    }
-
-    .peer-online {
-      width: 7px;
-      height: 7px;
-      background: var(--accent2);
-      border-radius: 50%;
-    }
-
-    #logoutBtn {
-      margin: 12px;
-      padding: 10px;
-      background: transparent;
-      color: var(--danger);
-      border: 1.5px solid rgba(255,79,106,0.3);
-      border-radius: 10px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    #logoutBtn:hover { background: rgba(255,79,106,0.08); }
-
-    /* Chat area */
-    #chatArea {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg);
-      min-width: 0;
-    }
-
-    #chatHeader {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: var(--surface);
-    }
-
-    #chatHeaderAvatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    #chatHeaderName {
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    #chatHeaderStatus {
-      font-size: 12px;
-      color: var(--accent2);
-    }
-
-    #emptyState {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: var(--text2);
-      gap: 12px;
-    }
-
-    #emptyState .icon {
-      font-size: 48px;
-      opacity: 0.4;
-    }
-
-    #emptyState p {
-      font-size: 15px;
-    }
-
-    #messages {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .msg {
-      max-width: 65%;
-      padding: 10px 14px;
-      border-radius: 16px;
-      font-size: 14px;
-      line-height: 1.5;
-      position: relative;
-    }
-
-    .msg-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .msg-wrap.me { align-items: flex-end; }
-    .msg-wrap.them { align-items: flex-start; }
-
-    .msg.me {
-      background: var(--me-bubble);
-      border-bottom-right-radius: 4px;
-      color: var(--text);
-    }
-
-    .msg.them {
-      background: var(--them-bubble);
-      border-bottom-left-radius: 4px;
-      border: 1px solid var(--border);
-    }
-
-    .msg-meta {
-      font-size: 11px;
-      color: var(--text2);
-      padding: 0 4px;
-    }
-
-    .system {
-      text-align: center;
-      color: var(--text2);
-      font-size: 12px;
-      margin: 8px 0;
-      font-family: 'DM Mono', monospace;
-    }
-
-    #typingIndicator {
-      padding: 4px 20px;
-      color: var(--text2);
-      font-size: 12px;
-      min-height: 20px;
-      font-style: italic;
-    }
-
-    #inputBar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-    }
-
-    #fileInput { display: none; }
-
-    .file-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: var(--surface2);
-      color: var(--text2);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }
-
-    .file-btn:hover { background: var(--border); color: var(--text); }
-
-    #msgInput {
-      flex: 1;
-      padding: 10px 14px;
-      background: var(--input-bg);
-      border: 1.5px solid var(--border);
-      border-radius: 12px;
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    #msgInput:focus { border-color: var(--accent); }
-
-    #sendBtn {
-      padding: 10px 18px;
-      background: linear-gradient(135deg, var(--accent), #3a6fd8);
-      color: white;
-      border: none;
-      border-radius: 12px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.2s;
-      flex-shrink: 0;
-    }
-
-    #sendBtn:hover { opacity: 0.85; }
-
-    /* Background canvas */
-    #bg {
-      position: fixed;
-      top: 0; left: 0;
-      z-index: -1;
-      pointer-events: none;
-    }
-
-    #bgToggle {
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      z-index: 1000;
-      padding: 6px 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text2);
-      border-radius: 8px;
-      font-size: 11px;
-      cursor: pointer;
-      font-family: 'DM Mono', monospace;
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    body { margin:0; font-family:Arial,sans-serif; background:#f2f2f2; }
+    #loginScreen, #chatScreen { width:100%; height:100vh; display:flex; justify-content:center; align-items:center; }
+    #loginBox { background:white; padding:25px; border-radius:8px; box-shadow:0 0 10px #ccc; width:300px; }
+    #chatScreen { display:none; flex-direction:column; }
+    #topBar { background:#0078ff; color:white; padding:10px 15px; font-size:20px; font-weight:bold; }
+    #mainArea { display:flex; flex:1; overflow:hidden; }
+    #onlinePanel { width:180px; background:#fff; border-right:1px solid #ccc; padding:10px; }
+    #onlinePanel h3 { font-size:13px; color:#555; margin-bottom:6px; }
+    #messages { flex:1; padding:15px; overflow-y:auto; background:#f9f9f9; }
+    .msg { background:#d9ecff; padding:10px; margin-bottom:10px; border-radius:6px; max-width:70%; }
+    .msg.me { background:#c8ffd4; margin-left:auto; }
+    .system { text-align:center; color:#666; font-size:14px; margin:10px 0; }
+    #typingIndicator { padding:5px 15px; color:#666; font-size:14px; height:20px; }
+    #inputBar { display:flex; padding:10px; background:#fff; border-top:1px solid #ccc; align-items:center; gap:6px; }
+    #msgInput { flex:1; padding:10px; font-size:16px; }
+    #sendBtn { padding:10px 20px; background:#0078ff; color:white; border:none; cursor:pointer; border-radius:4px; }
+    #registerBtn { width:100%; padding:8px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:6px; }
   </style>
 </head>
 <body>
   <canvas id="bg"></canvas>
-  <button id="bgToggle">Mode: particles</button>
-
-  <!-- Login Screen -->
-  <div id="loginScreen" class="auth-screen">
-    <div class="auth-card">
-      <div class="auth-logo">
-        <div class="auth-logo-icon">🔐</div>
-        <span class="auth-logo-text">SecureChat</span>
-      </div>
-      <h1 class="auth-title">Welcome back</h1>
-      <p class="auth-sub">Sign in to your encrypted workspace</p>
-
-      <div class="input-group">
-        <label>Username</label>
-        <input id="user" placeholder="Enter your username" autocomplete="username">
-        <div class="input-error" id="userError">Please enter a username</div>
-      </div>
-      <div class="input-group">
-        <label>Password</label>
-        <input id="pass" type="password" placeholder="Enter your password" autocomplete="current-password">
-        <div class="input-error" id="passError">Please enter a password</div>
-      </div>
-
-      <button id="loginBtn" class="btn-primary">Sign In</button>
-      <div class="auth-switch">
-        No account? <a href="#" id="goRegister">Create one</a>
-      </div>
-    </div>
+  <button id="bgToggle">Switch</button>
+<div id="loginScreen">
+  <div id="loginBox">
+    <h2>SecureChat Login</h2>
+    <input id="user" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <input id="pass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <button id="loginBtn" style="width:100%;padding:10px;background:#0078ff;color:white;border:none;border-radius:4px;cursor:pointer;">Login</button>
+    <p style="text-align:center;margin:10px 0 0;font-size:13px;color:#555;">
+      No account? <a href="#" id="goRegister">Create one</a>
+    </p>
   </div>
+</div>
 
-  <!-- Register Screen -->
-  <div id="registerScreen" class="auth-screen" style="display:none;">
-    <div class="auth-card">
-      <div class="auth-logo">
-        <div class="auth-logo-icon">🔐</div>
-        <span class="auth-logo-text">SecureChat</span>
-      </div>
-      <h1 class="auth-title">Create account</h1>
-      <p class="auth-sub">Join your encrypted workspace</p>
-
-      <div class="input-group">
-        <label>Username</label>
-        <input id="regUser" placeholder="Choose a username">
-        <div class="input-error" id="regUserError">Please enter a username</div>
-      </div>
-      <div class="input-group">
-        <label>Password</label>
-        <input id="regPass" type="password" placeholder="Create a password">
-        <div class="input-hint">Min 8 chars, 1 uppercase, 1 number, 1 special character</div>
-        <div class="input-error" id="regPassError"></div>
-      </div>
-      <div class="input-group">
-        <label>Confirm Password</label>
-        <input id="regPass2" type="password" placeholder="Repeat your password">
-        <div class="input-error" id="regPass2Error">Passwords do not match</div>
-      </div>
-
-      <button id="registerBtn" class="btn-secondary">Create Account</button>
-      <div class="auth-switch">
-        Already have an account? <a href="#" id="goLogin">Sign in</a>
-      </div>
-    </div>
+<!-- Register screen -->
+<div id="registerScreen" style="display:none;width:100%;height:100vh;justify-content:center;align-items:center;">
+  <div id="loginBox">
+    <h2>Create Account</h2>
+    <input id="regUser" placeholder="Username" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <input id="regPass" type="password" placeholder="Password" style="width:100%;padding:8px;margin-bottom:4px;box-sizing:border-box;">
+    <p style="font-size:11px;color:#888;margin:0 0 10px;">Min 8 chars, 1 uppercase, 1 number, 1 special character (!@#$%^&*)</p>
+    <input id="regPass2" type="password" placeholder="Confirm password" style="width:100%;padding:8px;margin-bottom:10px;box-sizing:border-box;">
+    <button id="registerBtn" style="width:100%;padding:10px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">Create Account</button>
+    <p style="text-align:center;margin:10px 0 0;font-size:13px;color:#555;">
+      Already have an account? <a href="#" id="goLogin">Log in</a>
+    </p>
   </div>
+</div>
 
-  <!-- Chat Screen -->
-  <div id="chatScreen">
-    <!-- Sidebar -->
-    <div id="sidebar">
-      <div id="sidebarHeader">
-        <div class="sidebar-logo">
-          <div class="sidebar-logo-icon">🔐</div>
-          <span class="sidebar-logo-text">SecureChat</span>
-        </div>
-        <div class="user-badge">
-          <div class="user-avatar" id="myAvatar">?</div>
-          <span class="user-name" id="myName">—</span>
-          <div class="online-dot"></div>
-        </div>
-      </div>
+<div id="chatScreen">
+  <div id="topBar">SecureChat</div>
 
-      <div id="sidebarLabel">Online Users</div>
+  <div id="mainArea">
+    <div id="onlinePanel">
+      <h3>Online — click to chat</h3>
       <ul id="onlineList"></ul>
-
-      <button id="logoutBtn">⏻ Sign Out</button>
     </div>
 
-    <!-- Chat Area -->
-    <div id="chatArea">
-      <div id="chatHeader" style="display:none;">
-        <div id="chatHeaderAvatar">?</div>
-        <div>
-          <div id="chatHeaderName">—</div>
-          <div id="chatHeaderStatus">🔒 End-to-end encrypted</div>
-        </div>
-      </div>
-
-      <div id="emptyState">
-        <div class="icon">💬</div>
-        <p>Select a user to start chatting</p>
-      </div>
-
-      <div id="messages" style="display:none;"></div>
+    <div style="flex:1;display:flex;flex-direction:column;">
+      <div id="messages"></div>
       <div id="typingIndicator"></div>
 
+      <!-- input bar unchanged -->
       <div id="inputBar">
-        <input id="fileInput" type="file">
-        <label for="fileInput" class="file-btn" title="Send file">📎</label>
-        <button class="file-btn" id="emojiBtn">😊</button>
-        <button class="file-btn" id="boldBtn"><b>B</b></button>
-        <button class="file-btn" id="italicBtn"><i>I</i></button>
-        <input id="msgInput" placeholder="Select a user to start chatting…">
-        <button id="sendBtn">Send ↑</button>
+        <input id="fileInput" type="file" style="margin-right:8px;">
+        <button id="emojiBtn">😊</button>
+        <button id="boldBtn"><b>B</b></button>
+        <button id="italicBtn"><i>I</i></button>
+        <input id="msgInput" placeholder="Type a message...">
+        <button id="sendBtn">Send</button>
       </div>
     </div>
   </div>
+</div>
 
-  <script src="/static/main.js"></script>
+<script src="/static/main.js"></script>
 </body>
 </html>

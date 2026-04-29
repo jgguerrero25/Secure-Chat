@@ -83,79 +83,33 @@ document.getElementById("goLogin").onclick = (e) => {
 };
 
 // ── Login ──────────────────────────────────────────────────────────────────────
-function showError(inputId, errorId, msg) {
-  const input = document.getElementById(inputId);
-  const error = document.getElementById(errorId);
-  input.classList.add("error");
-  if (msg) error.textContent = msg;
-  error.style.display = "block";
-}
-
-function clearError(inputId, errorId) {
-  const input = document.getElementById(inputId);
-  const error = document.getElementById(errorId);
-  input.classList.remove("error");
-  error.style.display = "none";
-}
-
-// Clear errors on input
-["user","pass","regUser","regPass","regPass2"].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener("input", () => {
-    const errId = id + "Error";
-    if (document.getElementById(errId)) clearError(id, errId);
-  });
-});
-
-async function enterChat(tkn, user) {
-  token    = tkn;
-  username = user;
-  document.getElementById("myName").textContent = user;
-  document.getElementById("myAvatar").textContent = user[0].toUpperCase();
-  loginScreen.style.display    = "none";
-  registerScreen.style.display = "none";
-  chatScreen.style.display     = "flex";
-  await generateKeyPair();
-  connectWS();
-}
-
 document.getElementById("loginBtn").onclick = async () => {
-  const user = document.getElementById("user").value.trim();
-  const pass = document.getElementById("pass").value.trim();
-  let valid = true;
-
-  if (!user) { showError("user", "userError", "Please enter a username"); valid = false; }
-  if (!pass) { showError("pass", "passError", "Please enter a password"); valid = false; }
-  if (!valid) return;
+  username       = document.getElementById("user").value.trim();
+  const password = document.getElementById("pass").value.trim();
+  if (!username || !password) { alert("Enter username and password."); return; }
 
   const res = await fetch("/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: user, password: pass }),
+    body: JSON.stringify({ username, password }),
   });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    if (res.status === 429) showError("pass", "passError", "Too many attempts. Wait 5 minutes.");
-    else showError("pass", "passError", "Invalid username or password.");
+    if (res.status === 429) alert("Too many failed attempts. Wait 5 minutes.");
+    else alert("Invalid username or password.");
     return;
   }
 
   const data = await res.json();
-  await enterChat(data.token, data.username || user);
-};
+  token    = data.token;
+  username = data.username || username;
 
-document.getElementById("logoutBtn").onclick = () => {
-  if (ws) { try { ws.close(); } catch {} ws = null; }
-  token = null; username = null; currentPeer = null;
-  peerPublicKeys = {}; myPrivateKey = null; myPublicKeyPem = null;
-  document.getElementById("onlineList").innerHTML = "";
-  document.getElementById("messages").innerHTML = "";
-  document.getElementById("messages").style.display = "none";
-  document.getElementById("emptyState").style.display = "flex";
-  document.getElementById("chatHeader").style.display = "none";
-  chatScreen.style.display = "none";
-  loginScreen.style.display = "flex";
+  await generateKeyPair();
+
+  loginScreen.style.display = "none";
+  chatScreen.style.display  = "flex";
+  connectWS();
 };
 
 // ── Password strength checker ─────────────────────────────────────────────────
@@ -172,15 +126,12 @@ document.getElementById("registerBtn").onclick = async () => {
   const user  = document.getElementById("regUser").value.trim();
   const pass  = document.getElementById("regPass").value.trim();
   const pass2 = document.getElementById("regPass2").value.trim();
-  let valid = true;
 
-  if (!user) { showError("regUser", "regUserError", "Please enter a username"); valid = false; }
+  if (!user || !pass) { alert("Fill in all fields."); return; }
+  if (pass !== pass2)  { alert("Passwords do not match."); return; }
 
   const strengthError = checkPasswordStrength(pass);
-  if (strengthError) { showError("regPass", "regPassError", strengthError); valid = false; }
-
-  if (pass !== pass2) { showError("regPass2", "regPass2Error", "Passwords do not match"); valid = false; }
-  if (!valid) return;
+  if (strengthError) { alert(strengthError); return; }
 
   const res = await fetch("/register", {
     method: "POST",
@@ -190,29 +141,24 @@ document.getElementById("registerBtn").onclick = async () => {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    if (err.error === "username_taken") showError("regUser", "regUserError", "Username already taken.");
-    else showError("regUser", "regUserError", "Registration failed. Try again.");
+    if (err.error === "username_taken") alert("Username already taken.");
+    else alert("Registration failed.");
     return;
   }
 
-  // Auto-login after register
-  const loginRes = await fetch("/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: user, password: pass }),
-  });
-  if (loginRes.ok) {
-    const data = await loginRes.json();
-    await enterChat(data.token, data.username || user);
-  } else {
-    registerScreen.style.display = "none";
-    loginScreen.style.display    = "flex";
-  }
+  alert("Account created! You can now log in.");
+  registerScreen.style.display = "none";
+  loginScreen.style.display    = "flex";
 };
 
 // ── Auto-login when called from desktop app ───────────────────────────────────
 function autoLoginFromDesktop(tkn, user) {
-  enterChat(tkn, user);
+  token    = tkn;
+  username = user;
+  loginScreen.style.display    = "none";
+  registerScreen.style.display = "none";
+  chatScreen.style.display     = "flex";
+  generateKeyPair().then(() => connectWS());
 }
 
 function connectWS() {
@@ -269,21 +215,7 @@ function connectWS() {
 // ── Select a peer to chat with ────────────────────────────────────────────────
 function selectPeer(peer) {
   currentPeer = peer;
-
-  // Highlight active user in sidebar
-  document.querySelectorAll("#onlineList li").forEach(li => li.classList.remove("active"));
-  const activeLi = document.getElementById(`user-${peer}`);
-  if (activeLi) activeLi.classList.add("active");
-
-  // Show chat header
-  document.getElementById("chatHeader").style.display = "flex";
-  document.getElementById("chatHeaderName").textContent = peer;
-  document.getElementById("chatHeaderAvatar").textContent = peer[0].toUpperCase();
-
-  // Show messages, hide empty state
-  document.getElementById("emptyState").style.display = "none";
-  messages.style.display = "flex";
-
+  document.getElementById("topBar").textContent = `SecureChat — ${peer}`;
   messages.innerHTML = "";
   addSystem(`Started encrypted chat with ${peer}`);
   ws.send(JSON.stringify({ type: "select_peer", peer }));
@@ -386,20 +318,11 @@ async function uploadAndSendFile(file) {
 function updateOnline(user, add) {
   if (add) {
     if (document.getElementById(`user-${user}`)) return;
-    if (user === username) return;
     const li = document.createElement("li");
     li.id = `user-${user}`;
-    const avatar = document.createElement("div");
-    avatar.className = "peer-avatar";
-    avatar.textContent = user[0].toUpperCase();
-    const name = document.createElement("span");
-    name.className = "peer-name";
-    name.textContent = user;
-    const dot = document.createElement("div");
-    dot.className = "peer-online";
-    li.appendChild(avatar);
-    li.appendChild(name);
-    li.appendChild(dot);
+    li.textContent = user;
+    li.style.cursor = "pointer";
+    li.title = `Chat with ${user}`;
     li.onclick = () => selectPeer(user);
     onlineList.appendChild(li);
   } else {
@@ -416,18 +339,11 @@ function formatMessage(text) {
 }
 
 function addMessage(user, text, isMe = false) {
+  const div = document.createElement("div");
+  div.className = "msg" + (isMe ? " me" : "");
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const wrap = document.createElement("div");
-  wrap.className = "msg-wrap " + (isMe ? "me" : "them");
-  const bubble = document.createElement("div");
-  bubble.className = "msg " + (isMe ? "me" : "them");
-  bubble.innerHTML = formatMessage(text);
-  const meta = document.createElement("div");
-  meta.className = "msg-meta";
-  meta.textContent = isMe ? ts : `${user} · ${ts}`;
-  wrap.appendChild(bubble);
-  wrap.appendChild(meta);
-  messages.appendChild(wrap);
+  div.innerHTML = `<div><strong>${user}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div>${formatMessage(text)}</div>`;
+  messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
 }
 
