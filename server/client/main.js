@@ -67,7 +67,7 @@ async function decryptMessage(payload) {
   return new TextDecoder().decode(plain);
 }
 
-// ── Validation helpers (NEW) ──────────────────────────────────────────────────
+// ── Validation helpers ────────────────────────────────────────────────────────
 function setError(inputId, errId, msg) {
   const el = document.getElementById(inputId);
   const err = document.getElementById(errId);
@@ -85,10 +85,27 @@ function clearError(inputId, errId) {
   if (el) el.addEventListener("input", () => clearError(id, errId));
 });
 
+// ── Message log (plaintext) for persistence ───────────────────────────────────
+function saveMessageLog(user, text, isMe) {
+  if (!username || !currentPeer) return;
+  const key = `log_${username}_${currentPeer}`;
+  const log = JSON.parse(localStorage.getItem(key) || "[]");
+  log.push({ user, text, isMe, ts: new Date().toISOString() });
+  localStorage.setItem(key, JSON.stringify(log));
+}
+
+function loadMessageLog() {
+  if (!username || !currentPeer) return;
+  const key = `log_${username}_${currentPeer}`;
+  const log = JSON.parse(localStorage.getItem(key) || "[]");
+  messages.innerHTML = "";
+  log.forEach(m => addMessage(m.user, m.text, m.isMe, false));
+}
+
+// ── Enter chat ────────────────────────────────────────────────────────────────
 async function enterChat(tkn, user) {
   token    = tkn;
   username = user;
-  // Save to localStorage so refresh keeps you logged in
   localStorage.setItem("sc_token", tkn);
   localStorage.setItem("sc_user", user);
   loginScreen.style.display    = "none";
@@ -126,7 +143,7 @@ document.getElementById("logoutBtn").onclick = () => {
   document.getElementById("topBarTitle").textContent = "SecureChat";
 };
 
-// ── Login ──────────────────────────────────────────────────────────────────────
+// ── Login ─────────────────────────────────────────────────────────────────────
 document.getElementById("loginBtn").onclick = async () => {
   const user = document.getElementById("user").value.trim();
   const pass = document.getElementById("pass").value.trim();
@@ -161,7 +178,7 @@ function checkPasswordStrength(pass) {
   return null;
 }
 
-// ── Register ───────────────────────────────────────────────────────────────────
+// ── Register ──────────────────────────────────────────────────────────────────
 document.getElementById("registerBtn").onclick = async () => {
   const user  = document.getElementById("regUser").value.trim();
   const pass  = document.getElementById("regPass").value.trim();
@@ -187,7 +204,6 @@ document.getElementById("registerBtn").onclick = async () => {
     return;
   }
 
-  // Auto-login after register (NEW)
   const loginRes = await fetch("/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -213,6 +229,11 @@ function connectWS() {
   ws.onopen = () => {
     console.log("Connected");
     ws.send(JSON.stringify({ type: "register_key", public_key: myPublicKeyPem }));
+    if (currentPeer) {
+      setTimeout(() => {
+        ws.send(JSON.stringify({ type: "select_peer", peer: currentPeer }));
+      }, 500);
+    }
   };
 
   ws.onmessage = async (event) => {
@@ -221,6 +242,20 @@ function connectWS() {
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";
       msg.data.users.forEach(u => updateOnline(u, true));
+      // Always restore saved peer even if not currently online
+      const savedPeer = localStorage.getItem(`lastPeer_${username}`);
+      if (savedPeer && !currentPeer) {
+        updateOnline(savedPeer, true); // force add to sidebar
+        currentPeer = savedPeer;
+        document.getElementById("topBarTitle").textContent = `SecureChat — ${savedPeer}`;
+        loadMessageLog();
+        ws.send(JSON.stringify({ type: "select_peer", peer: savedPeer }));
+        // Highlight in sidebar
+        setTimeout(() => {
+          const li = document.getElementById(`user-${savedPeer}`);
+          if (li) li.classList.add("active");
+        }, 100);
+      }
     }
 
     if (msg.type === "peer_key") {
@@ -254,7 +289,6 @@ function connectWS() {
 
   ws.onclose = (event) => {
     if (event.code === 1008 || !token) {
-      // Auth failed - clear session and go to login
       localStorage.removeItem("sc_token");
       localStorage.removeItem("sc_user");
       chatScreen.style.display = "none";
@@ -266,31 +300,20 @@ function connectWS() {
   };
 }
 
-// ── Select peer — with highlight + chat history (NEW) ─────────────────────────
-function saveChatHistory() {
-  if (username && currentPeer) {
-    sessionStorage.setItem(`chat_${username}_${currentPeer}`, messages.innerHTML);
-  }
-}
-
+// ── Select peer ───────────────────────────────────────────────────────────────
 function selectPeer(peer) {
-  if (currentPeer) saveChatHistory();
   currentPeer = peer;
+  localStorage.setItem(`lastPeer_${username}`, peer);
 
-  // Highlight active user (NEW)
   document.querySelectorAll("#onlineList li").forEach(li => li.classList.remove("active"));
   const li = document.getElementById(`user-${peer}`);
   if (li) li.classList.add("active");
 
   document.getElementById("topBarTitle").textContent = `SecureChat — ${peer}`;
 
-  // Restore chat history (NEW)
-  const saved = sessionStorage.getItem(`chat_${username}_${peer}`);
-  if (saved) {
-    messages.innerHTML = saved;
-    messages.scrollTop = messages.scrollHeight;
-  } else {
-    messages.innerHTML = "";
+  // Load plaintext message log
+  loadMessageLog();
+  if (!localStorage.getItem(`log_${username}_${peer}`)) {
     addSystem(`Started encrypted chat with ${peer}`);
   }
 
@@ -368,10 +391,26 @@ boldBtn.addEventListener("click",   () => InsertAroundAtCursor("**", "**"));
 italicBtn.addEventListener("click", () => InsertAroundAtCursor("*",  "*"));
 
 // ── File upload ───────────────────────────────────────────────────────────────
+const ALLOWED_TYPES = [
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "application/pdf", "text/plain",
+  "application/zip", "application/x-zip-compressed",
+  "video/mp4", "audio/mpeg"
+];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
   if (!file) return;
   if (!currentPeer) { alert("Select a user to chat with first."); return; }
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    alert("File type not allowed. Allowed: images, PDF, text, zip, mp4, mp3.");
+    fileInput.value = ""; return;
+  }
+  if (file.size > MAX_FILE_SIZE) {
+    alert("File too large. Maximum size is 10 MB.");
+    fileInput.value = ""; return;
+  }
   try { await uploadAndSendFile(file); fileInput.value = ""; }
   catch (e) { console.error(e); alert("File upload failed"); }
 });
@@ -415,14 +454,14 @@ function formatMessage(text) {
   return text;
 }
 
-function addMessage(user, text, isMe = false) {
+function addMessage(user, text, isMe = false, save = true) {
   const div = document.createElement("div");
   div.className = "msg" + (isMe ? " me" : "");
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   div.innerHTML = `<div><strong>${user}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div>${formatMessage(text)}</div>`;
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
-  saveChatHistory();
+  if (save) saveMessageLog(user, text);
 }
 
 function addFileMessage(data) {
@@ -449,7 +488,7 @@ function addFileMessage(data) {
   msgDiv.appendChild(link);
   messages.appendChild(msgDiv);
   messages.scrollTop = messages.scrollHeight;
-  saveChatHistory();
+  saveMessageLog(data.from, `[file] ${data.filename}`);
 }
 
 function addSystem(text) {
@@ -576,10 +615,12 @@ initParticles();
 initMatrix();
 updateButton();
 animate();
-// Auto-restore session on refresh
+
+// ── Auto-restore session on refresh ──────────────────────────────────────────
 (async () => {
   const savedToken = localStorage.getItem("sc_token");
   const savedUser  = localStorage.getItem("sc_user");
+  const savedPeer  = savedUser ? localStorage.getItem(`lastPeer_${savedUser}`) : null;
   if (savedToken && savedUser) {
     await enterChat(savedToken, savedUser);
   }
