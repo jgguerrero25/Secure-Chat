@@ -14,13 +14,15 @@ import jwt
 import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import boto3
+from botocore.client import Config
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 JWT_SECRET = "CHANGE_ME"
 JWT_ALGO = "HS256"
-JWT_EXP_SECONDS = 86400
+JWT_EXP_SECONDS = 1800
 PING_INTERVAL = 20
 
 UPLOAD_DIR = "uploads"
@@ -33,7 +35,20 @@ LOCKOUT_SECONDS    = 300
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL   = os.environ.get("DATABASE_URL")
+B2_KEY_ID      = os.environ.get("B2_KEY_ID")
+B2_APP_KEY     = os.environ.get("B2_APP_KEY")
+B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME", "securechat-files")
+B2_ENDPOINT    = "https://s3.us-east-005.backblazeb2.com"
+
+def get_b2_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=B2_ENDPOINT,
+        aws_access_key_id=B2_KEY_ID,
+        aws_secret_access_key=B2_APP_KEY,
+        config=Config(signature_version="s3v4"),
+    )
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor, sslmode='require')
@@ -239,19 +254,39 @@ async def upload_file(request):
     filename = field.filename
     file_id  = os.urandom(16).hex()
     tmp = os.path.join(UPLOAD_DIR, file_id + ".tmp")
-    enc = os.path.join(UPLOAD_DIR, file_id)
     hasher, size = hashlib.sha256(), 0
     with open(tmp, "wb") as f:
         while True:
             chunk = await field.read_chunk()
             if not chunk: break
             f.write(chunk); hasher.update(chunk); size += len(chunk)
-    key_tag = encrypt_file(tmp, enc)
-    os.unlink(tmp)
-    FILE_META[file_id] = {"filename": filename, "size": size,
-                          "hash": hasher.hexdigest(), "key_tag": key_tag}
+    file_hash = hasher.hexdigest()
+
+    if B2_KEY_ID and B2_APP_KEY:
+        # Encrypt then upload to Backblaze
+        enc_tmp = tmp + ".enc"
+        key_tag = encrypt_file(tmp, enc_tmp)
+        try:
+            b2 = get_b2_client()
+            b2.upload_file(enc_tmp, B2_BUCKET_NAME, file_id)
+            os.unlink(enc_tmp)
+        except Exception as e:
+            print(f"B2 upload error: {e}")
+            # Fall back to local storage
+            key_tag = encrypt_file(tmp, os.path.join(UPLOAD_DIR, file_id))
+        os.unlink(tmp)
+        FILE_META[file_id] = {"filename": filename, "size": size,
+                              "hash": file_hash, "key_tag": key_tag, "b2": True}
+    else:
+        # Local storage fallback
+        enc = os.path.join(UPLOAD_DIR, file_id)
+        key_tag = encrypt_file(tmp, enc)
+        os.unlink(tmp)
+        FILE_META[file_id] = {"filename": filename, "size": size,
+                              "hash": file_hash, "key_tag": key_tag, "b2": False}
+
     return web.json_response({"fileId": file_id, "filename": filename,
-                               "size": size, "hash": hasher.hexdigest(), "from": user})
+                               "size": size, "hash": file_hash, "from": user})
 
 async def download_file(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -261,11 +296,28 @@ async def download_file(request):
     if not file_id or "/" in file_id or ".." in file_id:
         return web.Response(status=400, text="Bad file_id")
     meta = FILE_META.get(file_id)
-    path = os.path.join(UPLOAD_DIR, file_id)
-    if not meta or not os.path.exists(path):
+    if not meta:
         return web.Response(status=404, text="Not found")
+
+    if meta.get("b2") and B2_KEY_ID and B2_APP_KEY:
+        # Download from Backblaze
+        try:
+            b2 = get_b2_client()
+            tmp = os.path.join(UPLOAD_DIR, file_id + ".dl")
+            b2.download_file(B2_BUCKET_NAME, file_id, tmp)
+            data = decrypt_file(tmp, meta["key_tag"])
+            os.unlink(tmp)
+        except Exception as e:
+            print(f"B2 download error: {e}")
+            return web.Response(status=500, text="Download failed")
+    else:
+        path = os.path.join(UPLOAD_DIR, file_id)
+        if not os.path.exists(path):
+            return web.Response(status=404, text="Not found")
+        data = decrypt_file(path, meta["key_tag"])
+
     return web.Response(
-        body=decrypt_file(path, meta["key_tag"]),
+        body=data,
         content_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
     )
