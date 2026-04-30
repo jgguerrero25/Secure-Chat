@@ -108,6 +108,7 @@ async function enterChat(tkn, user) {
   username = user;
   localStorage.setItem("sc_token", tkn);
   localStorage.setItem("sc_user", user);
+  sessionStorage.setItem("sc_active", "1"); // marks this tab as active
   loginScreen.style.display    = "none";
   registerScreen.style.display = "none";
   chatScreen.style.display     = "flex";
@@ -133,6 +134,7 @@ document.getElementById("goLogin").onclick = (e) => {
 document.getElementById("logoutBtn").onclick = () => {
   localStorage.removeItem("sc_token");
   localStorage.removeItem("sc_user");
+  sessionStorage.removeItem("sc_active");
   if (ws) { try { ws.close(); } catch {} ws = null; }
   token = null; username = null; currentPeer = null;
   peerPublicKeys = {}; myPrivateKey = null; myPublicKeyPem = null;
@@ -144,6 +146,14 @@ document.getElementById("logoutBtn").onclick = () => {
 };
 
 // ── Login ─────────────────────────────────────────────────────────────────────
+document.getElementById("pass").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("loginBtn").click();
+});
+
+document.getElementById("user").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("loginBtn").click();
+});
+
 document.getElementById("loginBtn").onclick = async () => {
   const user = document.getElementById("user").value.trim();
   const pass = document.getElementById("pass").value.trim();
@@ -161,6 +171,7 @@ document.getElementById("loginBtn").onclick = async () => {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     if (res.status === 429) setError("pass", "passErr", "Too many attempts. Wait 5 minutes.");
+    else if (res.status === 409) setError("pass", "passErr", "User already logged in from another tab or device."); 
     else setError("pass", "passErr", "Invalid username or password.");
     return;
   }
@@ -179,6 +190,19 @@ function checkPasswordStrength(pass) {
 }
 
 // ── Register ──────────────────────────────────────────────────────────────────
+document.getElementById("regUser").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("registerBtn").click();
+});
+
+document.getElementById("regPass").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("registerBtn").click();
+});
+
+document.getElementById("regPass2").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("registerBtn").click();
+});
+
+
 document.getElementById("registerBtn").onclick = async () => {
   const user  = document.getElementById("regUser").value.trim();
   const pass  = document.getElementById("regPass").value.trim();
@@ -432,18 +456,32 @@ async function uploadAndSendFile(file) {
 // ── Online users ──────────────────────────────────────────────────────────────
 function updateOnline(user, add) {
   if (add) {
-    if (document.getElementById(`user-${user}`)) return;
+    if (document.getElementById(`user-${user}`)) {
+      // Update to online if already exists
+      const dot = document.querySelector(`#user-${user} .dot`);
+      if (dot) { dot.className = "dot online-dot"; }
+      return;
+    }
     if (user === username) return;
     const li = document.createElement("li");
     li.id = `user-${user}`;
-    li.textContent = user;
+    const dot = document.createElement("span");
+    dot.className = "dot online-dot";
+    const name = document.createElement("span");
+    name.textContent = user;
+    li.appendChild(dot);
+    li.appendChild(name);
     li.style.cursor = "pointer";
     li.title = `Chat with ${user}`;
     li.onclick = () => selectPeer(user);
     onlineList.appendChild(li);
   } else {
     const li = document.getElementById(`user-${user}`);
-    if (li) li.remove();
+    if (li) {
+      // Mark as offline instead of removing
+      const dot = li.querySelector(".dot");
+      if (dot) dot.className = "dot offline-dot";
+    }
   }
 }
 
@@ -620,8 +658,8 @@ animate();
 (async () => {
   const savedToken = localStorage.getItem("sc_token");
   const savedUser  = localStorage.getItem("sc_user");
-  const savedPeer  = savedUser ? localStorage.getItem(`lastPeer_${savedUser}`) : null;
-  if (savedToken && savedUser) {
+  const isActive   = sessionStorage.getItem("sc_active");
+  if (savedToken && savedUser && isActive) {
     await enterChat(savedToken, savedUser);
   }
 })();

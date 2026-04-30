@@ -1,4 +1,39 @@
 # Changelog
+
+---
+
+## [3.0.0] - Part 3
+
+### Added
+- Cloud hosting via Render (24/7 availability)
+- PostgreSQL database on Supabase (persistent user accounts)
+- Backblaze B2 cloud file storage (files persist across deploys)
+- UptimeRobot monitoring to keep server alive 24/7
+- Session persistence — stay logged in on page refresh
+- Auto-restore last chat peer on refresh
+- Online/offline presence indicators (green/offline dot in sidebar)
+- Logout button with session cleanup
+- Active chat user highlight in sidebar
+- Chat history saved to localStorage (plaintext log per user pair)
+- Client-side file validation (type and size checks before upload)
+- Duplicate login prevention — same user cannot log in from two tabs
+- Enter key support on login form
+- Auto-login after account registration
+- Red border validation on login and register forms (no more popups)
+- New tab always shows login screen (session only restored on refresh)
+
+### Changed
+- Replaced `users.json` local storage with PostgreSQL on Supabase
+- File uploads now stored on Backblaze B2 instead of local disk
+- JWT expiry extended to 24 hours
+- Users stay in sidebar after going offline (shown with grey dot)
+- Chat screen now fills full page width
+
+### Fixed
+- WebSocket reconnect no longer loops on auth failure
+- File download now includes auth token (no more Unauthorized error)
+- Message bubble colors correct per user after refresh
+
 ---
 
 ## [2.0.0] - Part 2
@@ -11,7 +46,7 @@
 - End-to-end encryption using AES-256-GCM and RSA-4096 key exchange
 - Session chat logging — new TXT file created per session in `chat_logs/`
 - File encryption at rest using AES-256-GCM
-- Emoji picker with 20 emojis
+- Emoji picker
 - Bold and italic text formatting
 - Auto-detected hyperlinks in messages
 - DM-based chat — click a user in the sidebar to start a private conversation

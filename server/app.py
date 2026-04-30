@@ -211,6 +211,12 @@ async def login(request):
     for key in (ip, username):
         if is_locked(key):
             return web.json_response({"error": "too_many_attempts"}, status=429)
+    
+    # Check if user is already connected
+    connected_users = [info["user"] for info in CONNECTED.values()]
+    if username in connected_users:
+        return web.json_response({"error": "already_logged_in"}, status=409)
+    
     record = get_user(username)
     if not record or not bcrypt.checkpw(password.encode(), record["password_hash"].encode()):
         for key in (ip, username): record_fail(key)

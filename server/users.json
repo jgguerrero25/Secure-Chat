@@ -19,5 +19,8 @@
   },
   "Tom": {
     "password_hash": "$2b$12$XKTqNmQGiPTSUDivDryOiuv8kWHdHG5oKM47Tzn/pJ3AhN7uHtCCe"
+  },
+  "Sal": {
+    "password_hash": "$2b$12$hysu3FVfazkTOYdC3KkZMeO.k13ZGzxJiIW9ETNBBDj0037PHvkRq"
   }
 }
