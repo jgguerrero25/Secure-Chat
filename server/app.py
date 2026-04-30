@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 JWT_SECRET = "CHANGE_ME"
 JWT_ALGO = "HS256"
-JWT_EXP_SECONDS = 1800
+JWT_EXP_SECONDS = 86400
 PING_INTERVAL = 20
 
 UPLOAD_DIR = "uploads"
@@ -33,7 +33,6 @@ LOCKOUT_SECONDS    = 300
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
-# ── Database setup ────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
@@ -50,40 +49,63 @@ def init_db():
     cur.close()
     conn.close()
 
-CONNECTED      = {}   # ws -> {"user": str, "peer": str|None}
+CONNECTED      = {}
 LOGIN_ATTEMPTS = defaultdict(lambda: {"count": 0, "locked_until": 0})
-USER_KEYS      = {}   # username -> {"private": key, "public_pem": bytes}
-FILE_META      = {}   # file_id  -> {filename, size, hash, key_tag}
-SESSION_LOGS   = {}   # (user_a, user_b) -> open file handle
+USER_KEYS      = {}
+FILE_META      = {}
+SESSION_LOGS   = {}
 
-# ── User DB (PostgreSQL) ──────────────────────────────────────────────────────
+# ── User DB with JSON fallback ────────────────────────────────────────────────
 def load_users():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT username, password_hash FROM users")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return {row["username"]: {"password_hash": row["password_hash"]} for row in rows}
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT username, password_hash FROM users")
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return {row["username"]: {"password_hash": row["password_hash"]} for row in rows}
+        except Exception as e:
+            print(f"DB error, falling back to JSON: {e}")
+    if not os.path.exists(USERS_FILE):
+        return {}
+    with open(USERS_FILE) as f:
+        return json.load(f)
 
 def save_user(username, password_hash):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, password_hash))
-    conn.commit()
-    cur.close()
-    conn.close()
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, password_hash))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return
+        except Exception as e:
+            print(f"DB error, falling back to JSON: {e}")
+    users = load_users()
+    users[username] = {"password_hash": password_hash}
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
 
 def get_user(username):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT username, password_hash FROM users WHERE username = %s", (username,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else None
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT username, password_hash FROM users WHERE username = %s", (username,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as e:
+            print(f"DB error, falling back to JSON: {e}")
+    users = load_users()
+    return users.get(username)
 
-# ── JWT (unchanged) ────────────────────────────────────────────────────────────
+# ── JWT ───────────────────────────────────────────────────────────────────────
 def make_jwt(username):
     now = int(time.time())
     payload = {"sub": username, "iat": now, "exp": now + JWT_EXP_SECONDS}
@@ -95,7 +117,7 @@ def verify_jwt(token):
     except:
         return None
 
-# ── Brute-force helpers ────────────────────────────────────────────────────────
+# ── Brute-force ───────────────────────────────────────────────────────────────
 def is_locked(key):
     return LOGIN_ATTEMPTS[key]["locked_until"] > time.time()
 
@@ -109,7 +131,7 @@ def record_fail(key):
 def reset_attempts(key):
     LOGIN_ATTEMPTS[key] = {"count": 0, "locked_until": 0}
 
-# ── Session logging ────────────────────────────────────────────────────────────
+# ── Session logging ───────────────────────────────────────────────────────────
 def open_log(user_a, user_b):
     key = tuple(sorted([user_a, user_b]))
     if key not in SESSION_LOGS:
@@ -134,43 +156,7 @@ def close_log(user_a, user_b):
         SESSION_LOGS[key].close()
         del SESSION_LOGS[key]
 
-# ── E2E encryption (RSA-4096 + AES-256-GCM) ───────────────────────────────────
-def gen_keypair(username):
-    priv = rsa.generate_private_key(public_exponent=65537, key_size=4096)
-    pub_pem = priv.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    USER_KEYS[username] = {"private": priv, "public_pem": pub_pem}
-    return pub_pem
-
-def encrypt_msg(recipient, plaintext):
-    if recipient not in USER_KEYS:
-        return {"encrypted": False, "text": plaintext}
-    pub     = USER_KEYS[recipient]["private"].public_key()
-    aes_key = os.urandom(32)
-    nonce   = os.urandom(12)
-    ct      = AESGCM(aes_key).encrypt(nonce, plaintext.encode(), None)
-    wrapped = pub.encrypt(aes_key, padding.OAEP(
-        mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None
-    ))
-    return {
-        "encrypted":   True,
-        "ciphertext":  base64.b64encode(ct).decode(),
-        "nonce":       base64.b64encode(nonce).decode(),
-        "wrapped_key": base64.b64encode(wrapped).decode(),
-    }
-
-def decrypt_msg(recipient, payload):
-    if not payload.get("encrypted"):
-        return payload.get("text", "")
-    priv    = USER_KEYS[recipient]["private"]
-    aes_key = priv.decrypt(base64.b64decode(payload["wrapped_key"]),
-        padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
-    return AESGCM(aes_key).decrypt(
-        base64.b64decode(payload["nonce"]), base64.b64decode(payload["ciphertext"]), None
-    ).decode()
-
-# ── File encryption ────────────────────────────────────────────────────────────
+# ── File encryption ───────────────────────────────────────────────────────────
 def encrypt_file(src, dst):
     key, nonce = os.urandom(32), os.urandom(12)
     with open(src, "rb") as f: data = f.read()
@@ -182,15 +168,13 @@ def decrypt_file(path, key_tag):
     with open(path, "rb") as f: ct = f.read()
     return AESGCM(raw[12:]).decrypt(raw[:12], ct, None)
 
-# ── NEW: /register ─────────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
 async def register(request):
     data     = await request.json()
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
     if not username or not password:
         return web.json_response({"error": "missing_fields"}, status=400)
-
-    # Password strength validation
     if len(password) < 8:
         return web.json_response({"error": "password_too_short"}, status=400)
     if not re.search(r'[A-Z]', password):
@@ -204,33 +188,27 @@ async def register(request):
     save_user(username, bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode())
     return web.json_response({"ok": True}, status=201)
 
-# ── UPDATED: /login — hashed passwords + brute-force protection ───────────────
 async def login(request):
     data     = await request.json()
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
     ip       = request.remote or "unknown"
-
     for key in (ip, username):
         if is_locked(key):
             return web.json_response({"error": "too_many_attempts"}, status=429)
-
     record = get_user(username)
     if not record or not bcrypt.checkpw(password.encode(), record["password_hash"].encode()):
         for key in (ip, username): record_fail(key)
         return web.json_response({"error": "invalid_credentials"}, status=401)
-
     reset_attempts(ip); reset_attempts(username)
     return web.json_response({"token": make_jwt(username), "username": username})
 
-# ── NEW: /users ────────────────────────────────────────────────────────────────
 async def get_users(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not verify_jwt(auth):
         return web.Response(status=401)
     return web.json_response({"users": list(load_users().keys())})
 
-# ── broadcast (unchanged) ──────────────────────────────────────────────────────
 async def broadcast(event, data, exclude=None):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -240,7 +218,6 @@ async def broadcast(event, data, exclude=None):
         except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
-# ── NEW: send to one specific user ────────────────────────────────────────────
 async def send_to(username, event, data):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -250,30 +227,25 @@ async def send_to(username, event, data):
             except: dead.append(ws)
     for ws in dead: CONNECTED.pop(ws, None)
 
-# ── UPDATED: upload_file — encrypts file at rest ──────────────────────────────
 async def upload_file(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     user = verify_jwt(auth)
     if not user:
         return web.Response(status=401, text="Unauthorized")
-
     reader = await request.multipart()
     field  = await reader.next()
     if not field or field.name != "file":
         return web.Response(status=400, text="No file field")
-
     filename = field.filename
     file_id  = os.urandom(16).hex()
     tmp = os.path.join(UPLOAD_DIR, file_id + ".tmp")
     enc = os.path.join(UPLOAD_DIR, file_id)
-
     hasher, size = hashlib.sha256(), 0
     with open(tmp, "wb") as f:
         while True:
             chunk = await field.read_chunk()
             if not chunk: break
             f.write(chunk); hasher.update(chunk); size += len(chunk)
-
     key_tag = encrypt_file(tmp, enc)
     os.unlink(tmp)
     FILE_META[file_id] = {"filename": filename, "size": size,
@@ -281,47 +253,35 @@ async def upload_file(request):
     return web.json_response({"fileId": file_id, "filename": filename,
                                "size": size, "hash": hasher.hexdigest(), "from": user})
 
-# ── UPDATED: download_file — decrypts on the fly ─────────────────────────────
 async def download_file(request):
     auth = request.headers.get("Authorization", "").replace("Bearer ", "")
     if not verify_jwt(auth):
         return web.Response(status=401, text="Unauthorized")
-
     file_id = request.query.get("file_id", "")
     if not file_id or "/" in file_id or ".." in file_id:
         return web.Response(status=400, text="Bad file_id")
-
     meta = FILE_META.get(file_id)
     path = os.path.join(UPLOAD_DIR, file_id)
     if not meta or not os.path.exists(path):
         return web.Response(status=404, text="Not found")
-
     return web.Response(
         body=decrypt_file(path, meta["key_tag"]),
         content_type="application/octet-stream",
         headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
     )
 
-# ── UPDATED: websocket_handler — DMs, peer selection, E2E keys, logging ──────
 async def websocket_handler(request):
     token = request.query.get("token")
     user  = verify_jwt(token)
     if not user:
         return web.Response(status=401, text="Unauthorized")
-
     ws = web.WebSocketResponse(autoping=False, heartbeat=PING_INTERVAL)
     await ws.prepare(request)
-
     CONNECTED[ws] = {"user": user, "peer": None}
-
-    # Send online list to the new user
     await ws.send_str(json.dumps({
         "type": "session_init",
-        "data": {
-            "users": list(set(i["user"] for i in CONNECTED.values())),
-        }
+        "data": {"users": list(set(i["user"] for i in CONNECTED.values()))},
     }))
-
     if [i["user"] for i in CONNECTED.values()].count(user) == 1:
         await broadcast("user_joined", {"user": user}, exclude=ws)
 
@@ -332,7 +292,6 @@ async def websocket_handler(request):
             await asyncio.sleep(PING_INTERVAL)
 
     ping_task = asyncio.create_task(ping_loop())
-
     try:
         async for msg in ws:
             if msg.type != WSMsgType.TEXT: continue
@@ -340,7 +299,6 @@ async def websocket_handler(request):
             mtype   = payload.get("type")
 
             if mtype == "register_key":
-                # Client sends us their browser-generated public key to store
                 USER_KEYS[user] = {"public_pem": payload.get("public_key", "").encode()}
 
             elif mtype == "typing":
@@ -361,7 +319,6 @@ async def websocket_handler(request):
                             "data": {"user": new_peer,
                                      "public_key": USER_KEYS[new_peer]["public_pem"].decode()}
                         }))
-                    # Also notify the peer that we want to chat (so they can send us their key)
                     if new_peer in [i["user"] for i in CONNECTED.values()]:
                         if user in USER_KEYS:
                             await send_to(new_peer, "peer_key", {
@@ -372,10 +329,8 @@ async def websocket_handler(request):
             elif mtype == "chat":
                 peer = CONNECTED[ws].get("peer")
                 if not peer: continue
-                # Log plaintext if available, otherwise log encrypted notice
                 text = payload.get("text", "[encrypted]")
                 log_msg(user, peer, text)
-                # Forward the message as-is (already encrypted by client)
                 await send_to(peer, "chat", {"from": user, **{k: v for k, v in payload.items() if k != "type"}})
 
             elif mtype == "file":
@@ -396,14 +351,12 @@ async def websocket_handler(request):
                 await broadcast("user_left", {"user": info["user"]})
                 USER_KEYS.pop(info["user"], None)
         ping_task.cancel()
-
     return ws
 
-# ── App setup (same as original + /register and /users) ───────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 app = web.Application()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CLIENT_DIR = os.path.join(BASE_DIR, "client")
-
 app.router.add_static("/static/", CLIENT_DIR, show_index=True)
 
 async def index(request):
@@ -427,7 +380,6 @@ if __name__ == "__main__":
             print(f"Warning: Could not connect to database: {e}")
 
     port = int(os.environ.get("PORT", 8443))
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     cert = os.path.join(BASE_DIR, "certs/fullchain.pem")
     key  = os.path.join(BASE_DIR, "certs/privkey.pem")
 

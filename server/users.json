@@ -13,5 +13,11 @@
   },
   "Sam": {
     "password_hash": "$2b$12$e32YA7Z/dyHSrZqSS5AhF.WPH.JabMj7inWIx6T5O.86NLiIbshYO"
+  },
+  "Jerry": {
+    "password_hash": "$2b$12$kjZOJDEIpZuVKA19dg3o8u8EfR2CKoFz.7rqO.DzUT2h3ZHetwjWa"
+  },
+  "Tom": {
+    "password_hash": "$2b$12$XKTqNmQGiPTSUDivDryOiuv8kWHdHG5oKM47Tzn/pJ3AhN7uHtCCe"
   }
 }

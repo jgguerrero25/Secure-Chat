@@ -4,7 +4,7 @@ let username = null;
 let currentPeer = null;
 let peerPublicKeys = {};
 let myPrivateKey = null;
-let myPublicKeyPem = null;      
+let myPublicKeyPem = null;
 
 let lastSent = 0;
 const SEND_COOLDOWN = 1000;
@@ -23,7 +23,7 @@ const italicBtn = document.getElementById("italicBtn");
 let typingTimeout = null;
 let isTyping = false;
 
-// ── NEW: RSA-4096 + AES-256-GCM via WebCrypto ─────────────────────────────────
+// ── RSA-4096 + AES-256-GCM via WebCrypto ──────────────────────────────────────
 async function generateKeyPair() {
   const kp = await crypto.subtle.generateKey(
     { name: "RSA-OAEP", modulusLength: 4096,
@@ -67,6 +67,37 @@ async function decryptMessage(payload) {
   return new TextDecoder().decode(plain);
 }
 
+// ── Validation helpers (NEW) ──────────────────────────────────────────────────
+function setError(inputId, errId, msg) {
+  const el = document.getElementById(inputId);
+  const err = document.getElementById(errId);
+  if (el) el.classList.add("field-error");
+  if (err) { if (msg) err.textContent = msg; err.style.display = "block"; }
+}
+function clearError(inputId, errId) {
+  const el = document.getElementById(inputId);
+  const err = document.getElementById(errId);
+  if (el) el.classList.remove("field-error");
+  if (err) err.style.display = "none";
+}
+[["user","userErr"],["pass","passErr"],["regUser","regUserErr"],["regPass","regPassErr"],["regPass2","regPass2Err"]].forEach(([id, errId]) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("input", () => clearError(id, errId));
+});
+
+async function enterChat(tkn, user) {
+  token    = tkn;
+  username = user;
+  // Save to localStorage so refresh keeps you logged in
+  localStorage.setItem("sc_token", tkn);
+  localStorage.setItem("sc_user", user);
+  loginScreen.style.display    = "none";
+  registerScreen.style.display = "none";
+  chatScreen.style.display     = "flex";
+  await generateKeyPair();
+  connectWS();
+}
+
 // ── Screen switching ───────────────────────────────────────────────────────────
 const registerScreen = document.getElementById("registerScreen");
 
@@ -82,34 +113,43 @@ document.getElementById("goLogin").onclick = (e) => {
   loginScreen.style.display    = "flex";
 };
 
+document.getElementById("logoutBtn").onclick = () => {
+  localStorage.removeItem("sc_token");
+  localStorage.removeItem("sc_user");
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  token = null; username = null; currentPeer = null;
+  peerPublicKeys = {}; myPrivateKey = null; myPublicKeyPem = null;
+  onlineList.innerHTML = "";
+  messages.innerHTML = "";
+  chatScreen.style.display = "none";
+  loginScreen.style.display = "flex";
+  document.getElementById("topBarTitle").textContent = "SecureChat";
+};
+
 // ── Login ──────────────────────────────────────────────────────────────────────
 document.getElementById("loginBtn").onclick = async () => {
-  username       = document.getElementById("user").value.trim();
-  const password = document.getElementById("pass").value.trim();
-  if (!username || !password) { alert("Enter username and password."); return; }
+  const user = document.getElementById("user").value.trim();
+  const pass = document.getElementById("pass").value.trim();
+  let valid = true;
+  if (!user) { setError("user", "userErr", "Please enter a username"); valid = false; }
+  if (!pass) { setError("pass", "passErr", "Please enter a password"); valid = false; }
+  if (!valid) return;
 
   const res = await fetch("/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username: user, password: pass }),
   });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    if (res.status === 429) alert("Too many failed attempts. Wait 5 minutes.");
-    else alert("Invalid username or password.");
+    if (res.status === 429) setError("pass", "passErr", "Too many attempts. Wait 5 minutes.");
+    else setError("pass", "passErr", "Invalid username or password.");
     return;
   }
 
   const data = await res.json();
-  token    = data.token;
-  username = data.username || username;
-
-  await generateKeyPair();
-
-  loginScreen.style.display = "none";
-  chatScreen.style.display  = "flex";
-  connectWS();
+  await enterChat(data.token, data.username || user);
 };
 
 // ── Password strength checker ─────────────────────────────────────────────────
@@ -126,12 +166,13 @@ document.getElementById("registerBtn").onclick = async () => {
   const user  = document.getElementById("regUser").value.trim();
   const pass  = document.getElementById("regPass").value.trim();
   const pass2 = document.getElementById("regPass2").value.trim();
+  let valid = true;
 
-  if (!user || !pass) { alert("Fill in all fields."); return; }
-  if (pass !== pass2)  { alert("Passwords do not match."); return; }
-
+  if (!user) { setError("regUser", "regUserErr", "Please enter a username"); valid = false; }
   const strengthError = checkPasswordStrength(pass);
-  if (strengthError) { alert(strengthError); return; }
+  if (strengthError) { setError("regPass", "regPassErr", strengthError); valid = false; }
+  if (pass !== pass2) { setError("regPass2", "regPass2Err", "Passwords do not match"); valid = false; }
+  if (!valid) return;
 
   const res = await fetch("/register", {
     method: "POST",
@@ -141,24 +182,29 @@ document.getElementById("registerBtn").onclick = async () => {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    if (err.error === "username_taken") alert("Username already taken.");
-    else alert("Registration failed.");
+    if (err.error === "username_taken") setError("regUser", "regUserErr", "Username already taken.");
+    else setError("regUser", "regUserErr", "Registration failed. Try again.");
     return;
   }
 
-  alert("Account created! You can now log in.");
-  registerScreen.style.display = "none";
-  loginScreen.style.display    = "flex";
+  // Auto-login after register (NEW)
+  const loginRes = await fetch("/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: user, password: pass }),
+  });
+  if (loginRes.ok) {
+    const data = await loginRes.json();
+    await enterChat(data.token, data.username || user);
+  } else {
+    registerScreen.style.display = "none";
+    loginScreen.style.display    = "flex";
+  }
 };
 
-// ── Auto-login when called from desktop app ───────────────────────────────────
+// ── Auto-login from desktop app ───────────────────────────────────────────────
 function autoLoginFromDesktop(tkn, user) {
-  token    = tkn;
-  username = user;
-  loginScreen.style.display    = "none";
-  registerScreen.style.display = "none";
-  chatScreen.style.display     = "flex";
-  generateKeyPair().then(() => connectWS());
+  enterChat(tkn, user);
 }
 
 function connectWS() {
@@ -206,18 +252,48 @@ function connectWS() {
     if (msg.type === "file")   { addFileMessage(msg.data); }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    if (event.code === 1008 || !token) {
+      // Auth failed - clear session and go to login
+      localStorage.removeItem("sc_token");
+      localStorage.removeItem("sc_user");
+      chatScreen.style.display = "none";
+      loginScreen.style.display = "flex";
+      return;
+    }
     addSystem("Disconnected. Reconnecting...");
     setTimeout(connectWS, 2000);
   };
 }
 
-// ── Select a peer to chat with ────────────────────────────────────────────────
+// ── Select peer — with highlight + chat history (NEW) ─────────────────────────
+function saveChatHistory() {
+  if (username && currentPeer) {
+    sessionStorage.setItem(`chat_${username}_${currentPeer}`, messages.innerHTML);
+  }
+}
+
 function selectPeer(peer) {
+  if (currentPeer) saveChatHistory();
   currentPeer = peer;
-  document.getElementById("topBar").textContent = `SecureChat — ${peer}`;
-  messages.innerHTML = "";
-  addSystem(`Started encrypted chat with ${peer}`);
+
+  // Highlight active user (NEW)
+  document.querySelectorAll("#onlineList li").forEach(li => li.classList.remove("active"));
+  const li = document.getElementById(`user-${peer}`);
+  if (li) li.classList.add("active");
+
+  document.getElementById("topBarTitle").textContent = `SecureChat — ${peer}`;
+
+  // Restore chat history (NEW)
+  const saved = sessionStorage.getItem(`chat_${username}_${peer}`);
+  if (saved) {
+    messages.innerHTML = saved;
+    messages.scrollTop = messages.scrollHeight;
+  } else {
+    messages.innerHTML = "";
+    addSystem(`Started encrypted chat with ${peer}`);
+  }
+
   ws.send(JSON.stringify({ type: "select_peer", peer }));
 }
 
@@ -318,6 +394,7 @@ async function uploadAndSendFile(file) {
 function updateOnline(user, add) {
   if (add) {
     if (document.getElementById(`user-${user}`)) return;
+    if (user === username) return;
     const li = document.createElement("li");
     li.id = `user-${user}`;
     li.textContent = user;
@@ -345,17 +422,15 @@ function addMessage(user, text, isMe = false) {
   div.innerHTML = `<div><strong>${user}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div>${formatMessage(text)}</div>`;
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
+  saveChatHistory();
 }
 
-// ── FIXED: file download with auth token ─────────────────────────────────────
 function addFileMessage(data) {
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const sizeKb = Math.round(data.size / 1024);
-
   const msgDiv = document.createElement("div");
   msgDiv.className = "msg";
   msgDiv.innerHTML = `<div><strong>${data.from}</strong><span style="font-size:12px;color:#666;">${ts}</span></div>`;
-
   const link = document.createElement("a");
   link.href = "#";
   link.textContent = `File: ${data.filename} (${sizeKb} KB)`;
@@ -368,15 +443,13 @@ function addFileMessage(data) {
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = data.filename;
-    a.click();
+    a.href = url; a.download = data.filename; a.click();
     URL.revokeObjectURL(url);
   };
-
   msgDiv.appendChild(link);
   messages.appendChild(msgDiv);
   messages.scrollTop = messages.scrollHeight;
+  saveChatHistory();
 }
 
 function addSystem(text) {
@@ -393,7 +466,7 @@ function showTyping(user, state) {
   typingIndicator.textContent = state ? `${user} is typing...` : "";
 }
 
-// ── Animated background (added by teammate) ───────────────────────────────────
+// ── Animated background ───────────────────────────────────────────────────────
 const canvas = document.getElementById("bg");
 const ctx = canvas.getContext("2d");
 const toggleBtn = document.getElementById("bgToggle");
@@ -435,8 +508,7 @@ function initParticles() {
 function drawParticles() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   particles.forEach(p => {
-    p.x += p.dx;
-    p.y += p.dy;
+    p.x += p.dx; p.y += p.dy;
     if (p.x < 0 || p.x > canvas.width) p.dx *= -1;
     if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
     ctx.beginPath();
@@ -504,3 +576,11 @@ initParticles();
 initMatrix();
 updateButton();
 animate();
+// Auto-restore session on refresh
+(async () => {
+  const savedToken = localStorage.getItem("sc_token");
+  const savedUser  = localStorage.getItem("sc_user");
+  if (savedToken && savedUser) {
+    await enterChat(savedToken, savedUser);
+  }
+})();
