@@ -499,8 +499,7 @@ function addMessage(user, text, isMe = false, save = true) {
   div.innerHTML = `<div><strong>${user}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div>${formatMessage(text)}</div>`;
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
-  if (save) saveMessageLog(user, text);
-}
+  if (save) saveMessageLog(user, text, isMe);}
 
 function addFileMessage(data) {
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
