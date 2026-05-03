@@ -266,19 +266,10 @@ function connectWS() {
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";
       msg.data.users.forEach(u => updateOnline(u, true));
-      // Always restore saved peer even if not currently online
+      // Add saved peer to sidebar but don't auto-select
       const savedPeer = localStorage.getItem(`lastPeer_${username}`);
-      if (savedPeer && !currentPeer) {
-        updateOnline(savedPeer, true); // force add to sidebar
-        currentPeer = savedPeer;
-        document.getElementById("topBarTitle").textContent = `SecureChat — ${savedPeer}`;
-        loadMessageLog();
-        ws.send(JSON.stringify({ type: "select_peer", peer: savedPeer }));
-        // Highlight in sidebar
-        setTimeout(() => {
-          const li = document.getElementById(`user-${savedPeer}`);
-          if (li) li.classList.add("active");
-        }, 100);
+      if (savedPeer) {
+        updateOnline(savedPeer, true);
       }
     }
 
@@ -354,7 +345,8 @@ async function sendMessage() {
   const now = Date.now();
   if (now - lastSent < SEND_COOLDOWN) { addSystem("Sending too fast."); return; }
   const text = msgInput.value.trim();
-  if (!text || !currentPeer) return;
+  if (!text) return;
+  if (!currentPeer) { addSystem("Please select a user to chat with first."); return; }
 
   const pubKey  = peerPublicKeys[currentPeer];
   const payload = pubKey
