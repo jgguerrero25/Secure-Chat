@@ -86,11 +86,11 @@ function clearError(inputId, errId) {
 });
 
 // ── Message log (plaintext) for persistence ───────────────────────────────────
-function saveMessageLog(user, text, isMe) {
+function saveMessageLog(user, text) {
   if (!username || !currentPeer) return;
   const key = `log_${username}_${currentPeer}`;
   const log = JSON.parse(localStorage.getItem(key) || "[]");
-  log.push({ user, text, isMe, ts: new Date().toISOString() });
+  log.push({ user, text, ts: new Date().toISOString() });
   localStorage.setItem(key, JSON.stringify(log));
 }
 
@@ -99,7 +99,7 @@ function loadMessageLog() {
   const key = `log_${username}_${currentPeer}`;
   const log = JSON.parse(localStorage.getItem(key) || "[]");
   messages.innerHTML = "";
-  log.forEach(m => addMessage(m.user, m.text, m.isMe, false));
+  log.forEach(m => addMessage(m.user, m.text, m.user === username, false));
 }
 
 // ── Enter chat ────────────────────────────────────────────────────────────────
@@ -499,7 +499,7 @@ function addMessage(user, text, isMe = false, save = true) {
   div.innerHTML = `<div><strong>${user}</strong><span style="font-size:12px;color:#666;">${ts}</span></div><div>${formatMessage(text)}</div>`;
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
-  if (save) saveMessageLog(user, text, isMe);}
+  if (save) saveMessageLog(user, text);}
 
 function addFileMessage(data) {
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
