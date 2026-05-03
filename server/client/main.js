@@ -266,11 +266,6 @@ function connectWS() {
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";
       msg.data.users.forEach(u => updateOnline(u, true));
-      // Add saved peer to sidebar but don't auto-select
-      const savedPeer = localStorage.getItem(`lastPeer_${username}`);
-      if (savedPeer) {
-        updateOnline(savedPeer, true);
-      }
     }
 
     if (msg.type === "peer_key") {
@@ -373,7 +368,12 @@ msgInput.addEventListener("input", () => {
 });
 
 // ── Emoji picker ──────────────────────────────────────────────────────────────
-const EMOJIS = ["😀","😂","😍","😎","😭","👍","🔥","❤️","🎉","🤔"];
+const EMOJIS = [
+  "😀","😂","😍","😎","😭","👍","🔥","❤️","🎉","🤔",
+  "😊","😅","🥹","😤","😢","😡","🥳","🤩","😴","🤯",
+  "👀","💀","🙏","👏","🤝","✌️","🫶","💪","🎯","💯",
+  "🍕","🎮","🏆","🌟","💡","🔐","📱","💬","🚀","🎵"
+];
 
 emojiBtn.addEventListener("click", () => {
   const menu = document.createElement("div");
@@ -387,7 +387,8 @@ emojiBtn.addEventListener("click", () => {
   });
   const rect = emojiBtn.getBoundingClientRect();
   menu.style.left = rect.left + "px";
-  menu.style.top  = rect.bottom + "px";
+  menu.style.bottom = (window.innerHeight - rect.top + 5) + "px";
+  menu.style.top = "auto";
   document.body.appendChild(menu);
   document.addEventListener("click", function closeMenu(ev) {
     if (!menu.contains(ev.target) && ev.target !== emojiBtn) {
