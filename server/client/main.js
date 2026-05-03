@@ -102,18 +102,35 @@ function loadMessageLog() {
   log.forEach(m => addMessage(m.user, m.text, m.user === username, false));
 }
 
+// ── Browser notifications ─────────────────────────────────────────────────────
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+function showNotification(from, text) {
+  if (!("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  new Notification(`SecureChat — ${from}`, {
+    body: text,
+    icon: "https://cdn-icons-png.flaticon.com/512/134/134914.png"
+  });
+}
+
 // ── Enter chat ────────────────────────────────────────────────────────────────
 async function enterChat(tkn, user) {
   token    = tkn;
   username = user;
   localStorage.setItem("sc_token", tkn);
   localStorage.setItem("sc_user", user);
-  sessionStorage.setItem("sc_active", "1"); // marks this tab as active
+  sessionStorage.setItem("sc_active", "1");
   loginScreen.style.display    = "none";
   registerScreen.style.display = "none";
   chatScreen.style.display     = "flex";
   await generateKeyPair();
   connectWS();
+  requestNotificationPermission();
 }
 
 // ── Screen switching ───────────────────────────────────────────────────────────
@@ -262,6 +279,10 @@ function connectWS() {
 
   ws.onmessage = async (event) => {
     const msg = JSON.parse(event.data);
+
+    if (msg.type === "notification") {
+      showNotification(msg.data.from, msg.data.text);
+    }
 
     if (msg.type === "session_init") {
       onlineList.innerHTML = "";

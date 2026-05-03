@@ -383,7 +383,21 @@ async def websocket_handler(request):
                 if not peer: continue
                 text = payload.get("text", "[encrypted]")
                 log_msg(user, peer, text)
-                await send_to(peer, "chat", {"from": user, **{k: v for k, v in payload.items() if k != "type"}})
+                # Only deliver message if recipient has sender selected as their peer
+                for ws2, info2 in list(CONNECTED.items()):
+                    if info2["user"] == peer:
+                        if info2.get("peer") == user:
+                            # Recipient is chatting with sender — deliver message
+                            await ws2.send_str(json.dumps({
+                                "type": "chat",
+                                "data": {"from": user, **{k: v for k, v in payload.items() if k != "type"}}
+                            }))
+                        else:
+                            # Recipient is chatting with someone else — send notification only
+                            await ws2.send_str(json.dumps({
+                                "type": "notification",
+                                "data": {"from": user, "text": "Sent you a message"}
+                            }))
 
             elif mtype == "file":
                 peer = CONNECTED[ws].get("peer")
