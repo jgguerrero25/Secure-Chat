@@ -11,7 +11,7 @@
     #logoutBtn:hover { background:#c0392b; }
     #mainArea { display:flex; flex:1; overflow:hidden; width:100%; }    #onlinePanel { width:140px; background:#fff; border-right:1px solid #ccc; padding:10px; }    #onlinePanel h3 { font-size:13px; color:#555; margin-bottom:6px; }
     #onlineList { list-style:none; padding:0; margin:0; }
-    #onlineList li { padding:6px 8px; border-radius:4px; cursor:pointer; }
+    #onlineList li { padding:6px 8px; border-radius:4px; cursor:pointer; display:flex; align-items:center; }
     #onlineList li:hover { background:#f0f0f0; }
     #onlineList li.active { background:#e3f0ff; color:#0078ff; font-weight:bold; }
     #messages { flex:1; padding:15px; overflow-y:auto; background:#f9f9f9; min-height:0; }    .msg { background:#d9ecff; padding:10px; margin-bottom:10px; border-radius:6px; max-width:70%; }
@@ -40,6 +40,18 @@
       border-radius:50%;
       margin-right:6px;
       background:#ccc;
+    }
+    
+    .unread-badge {
+      background: #e74c3c;
+      color: white;
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 5px;
+      margin-left: auto;
+      min-width: 16px;
+      text-align: center;
     }
   </style>
 </head>

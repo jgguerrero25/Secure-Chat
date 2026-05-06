@@ -10,17 +10,20 @@
 - Backblaze B2 cloud file storage (files persist across deploys)
 - UptimeRobot monitoring to keep server alive 24/7
 - Session persistence — stay logged in on page refresh
-- Auto-restore last chat peer on refresh
 - Online/offline presence indicators (green/offline dot in sidebar)
 - Logout button with session cleanup
 - Active chat user highlight in sidebar
 - Chat history saved to localStorage (plaintext log per user pair)
 - Client-side file validation (type and size checks before upload)
-- Duplicate login prevention — same user cannot log in from two tabs
-- Enter key support on login form
+- Enter key support on login and register forms
 - Auto-login after account registration
 - Red border validation on login and register forms (no more popups)
 - New tab always shows login screen (session only restored on refresh)
+- Browser notifications for incoming messages from non-active chats
+- Unread message badge on sidebar user when they send you a message
+- Admin password reset endpoint (`/reset-password`)
+- Expanded emoji picker (40 emojis)
+- Messages only delivered when both users have each other selected (no group chat bleed)
 
 ### Changed
 - Replaced `users.json` local storage with PostgreSQL on Supabase
@@ -28,11 +31,15 @@
 - JWT expiry extended to 24 hours
 - Users stay in sidebar after going offline (shown with grey dot)
 - Chat screen now fills full page width
+- Users must click a peer before sending messages
+- Sidebar only shows users who are actually online
 
 ### Fixed
 - WebSocket reconnect no longer loops on auth failure
 - File download now includes auth token (no more Unauthorized error)
 - Message bubble colors correct per user after refresh
+- Messages from third users no longer bleed into active chat (group chat issue)
+- Emoji picker no longer cut off at bottom of screen
 
 ---
 

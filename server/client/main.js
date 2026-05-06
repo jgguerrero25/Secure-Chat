@@ -118,6 +118,30 @@ function showNotification(from, text) {
   });
 }
 
+// ── Unread badge ──────────────────────────────────────────────────────────────
+const unreadCounts = {};
+
+function addUnreadBadge(user) {
+  unreadCounts[user] = (unreadCounts[user] || 0) + 1;
+  const li = document.getElementById(`user-${user}`);
+  if (!li) return;
+  let badge = li.querySelector(".unread-badge");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "unread-badge";
+    li.appendChild(badge);
+  }
+  badge.textContent = unreadCounts[user];
+}
+
+function clearUnreadBadge(user) {
+  unreadCounts[user] = 0;
+  const li = document.getElementById(`user-${user}`);
+  if (!li) return;
+  const badge = li.querySelector(".unread-badge");
+  if (badge) badge.remove();
+}
+
 // ── Enter chat ────────────────────────────────────────────────────────────────
 async function enterChat(tkn, user) {
   token    = tkn;
@@ -282,6 +306,7 @@ function connectWS() {
 
     if (msg.type === "notification") {
       showNotification(msg.data.from, msg.data.text);
+      addUnreadBadge(msg.data.from);
     }
 
     if (msg.type === "session_init") {
@@ -334,6 +359,7 @@ function connectWS() {
 // ── Select peer ───────────────────────────────────────────────────────────────
 function selectPeer(peer) {
   currentPeer = peer;
+  clearUnreadBadge(peer); // clear badge when opening chat
   localStorage.setItem(`lastPeer_${username}`, peer);
 
   document.querySelectorAll("#onlineList li").forEach(li => li.classList.remove("active"));
