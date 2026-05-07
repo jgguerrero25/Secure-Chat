@@ -49,7 +49,11 @@ def get_b2_client():
         endpoint_url=B2_ENDPOINT,
         aws_access_key_id=B2_KEY_ID,
         aws_secret_access_key=B2_APP_KEY,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
     )
 
 def get_db():
