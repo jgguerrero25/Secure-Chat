@@ -545,7 +545,7 @@ function addFileMessage(data) {
   const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const sizeKb = Math.round(data.size / 1024);
   const msgDiv = document.createElement("div");
-  msgDiv.className = "msg";
+  msgDiv.className = "msg" + (data.from === username ? " me" : "");
   msgDiv.innerHTML = `<div><strong>${data.from}</strong><span style="font-size:12px;color:#666;">${ts}</span></div>`;
   const link = document.createElement("a");
   link.href = "#";

@@ -304,7 +304,7 @@ async def download_file(request):
         try:
             b2 = get_b2_client()
             tmp = os.path.join(UPLOAD_DIR, file_id + ".dl")
-            b2.download_file(B2_BUCKET_NAME, file_id, tmp)
+            b2.download_file(Bucket=B2_BUCKET_NAME, Key=file_id, Filename=tmp)
             data = decrypt_file(tmp, meta["key_tag"])
             os.unlink(tmp)
         except Exception as e:
