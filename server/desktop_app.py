@@ -34,7 +34,6 @@ def http_post(path, payload):
         except: pass
         return e.code, body
 
-
 class LoginWindow(QWidget):
     def __init__(self, on_login_success):
         super().__init__()
@@ -95,7 +94,6 @@ class LoginWindow(QWidget):
         else:
             QMessageBox.critical(self, "Error", f"Registration failed ({status}).")
 
-
 class SecureChatWindow(QMainWindow):
     def __init__(self, token, username, on_switch_user):
         super().__init__()
@@ -132,7 +130,6 @@ class SecureChatWindow(QMainWindow):
         self.close()
         self.on_switch_user()
 
-
 class SecureChatApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
@@ -160,6 +157,5 @@ class SecureChatApp:
 
     def run(self):
         sys.exit(self.app.exec())
-
 
 SecureChatApp().run()

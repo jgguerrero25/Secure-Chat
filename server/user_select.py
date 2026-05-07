@@ -11,7 +11,6 @@ _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
 
-
 def fetch_users(token):
     req = urllib.request.Request(
         f"{SERVER}/users",
@@ -24,7 +23,6 @@ def fetch_users(token):
     except Exception as e:
         print(f"[UserSelect] Could not fetch users: {e}")
         return []
-
 
 class UserSelect(QWidget):
     def __init__(self, token, current_user, on_user_selected):
