@@ -32,6 +32,8 @@ USERS_FILE = "users.json"
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_SECONDS    = 300
 
+MESSAGE_QUEUE = defaultdict(list)  # username -> list of pending messages
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
@@ -377,13 +379,21 @@ async def websocket_handler(request):
                                 "user": user,
                                 "public_key": USER_KEYS[user]["public_pem"].decode()
                             })
+                    # Deliver any queued messages from this peer
+                    queued = MESSAGE_QUEUE.pop(user, [])
+                    for qmsg in queued:
+                        if qmsg["from"] == new_peer:
+                            await ws.send_str(json.dumps({
+                                "type": "chat",
+                                "data": qmsg
+                            }))
 
             elif mtype == "chat":
                 peer = CONNECTED[ws].get("peer")
                 if not peer: continue
                 text = payload.get("text", "[encrypted]")
                 log_msg(user, peer, text)
-                # Only deliver message if recipient has sender selected as their peer
+                delivered = False
                 for ws2, info2 in list(CONNECTED.items()):
                     if info2["user"] == peer:
                         if info2.get("peer") == user:
@@ -392,12 +402,16 @@ async def websocket_handler(request):
                                 "type": "chat",
                                 "data": {"from": user, **{k: v for k, v in payload.items() if k != "type"}}
                             }))
+                            delivered = True
                         else:
                             # Recipient is chatting with someone else — send notification only
                             await ws2.send_str(json.dumps({
                                 "type": "notification",
                                 "data": {"from": user, "text": "Sent you a message"}
                             }))
+                if not delivered:
+                    # Queue message for when recipient selects sender
+                    MESSAGE_QUEUE[peer].append({"from": user, **{k: v for k, v in payload.items() if k != "type"}})
 
             elif mtype == "file":
                 peer = CONNECTED[ws].get("peer")
