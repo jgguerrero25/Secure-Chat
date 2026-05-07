@@ -22,8 +22,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 JWT_SECRET = "CHANGE_ME"
 JWT_ALGO = "HS256"
-JWT_EXP_SECONDS = 1800
+JWT_EXP_SECONDS = 86400
 PING_INTERVAL = 20
+ADMIN_KEY = "CHANGE_THIS_SECRET"
 
 UPLOAD_DIR = "uploads"
 LOGS_DIR   = "chat_logs"
@@ -32,15 +33,13 @@ USERS_FILE = "users.json"
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_SECONDS    = 300
 
-MESSAGE_QUEUE = defaultdict(list)  # username -> list of pending messages
-
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR,   exist_ok=True)
 
 DATABASE_URL   = os.environ.get("DATABASE_URL")
-B2_KEY_ID      = os.environ.get("B2_KEY_ID")
-B2_APP_KEY     = os.environ.get("B2_APP_KEY")
-B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME", "securechat-files")
+B2_KEY_ID      = os.environ.get("B2_KEY_ID", "").strip()
+B2_APP_KEY     = os.environ.get("B2_APP_KEY", "").strip()
+B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME", "securechat-files").strip()
 B2_ENDPOINT    = "https://s3.us-east-005.backblazeb2.com"
 
 def get_b2_client():
@@ -49,11 +48,7 @@ def get_b2_client():
         endpoint_url=B2_ENDPOINT,
         aws_access_key_id=B2_KEY_ID,
         aws_secret_access_key=B2_APP_KEY,
-        config=Config(
-            signature_version="s3v4",
-            request_checksum_calculation="when_required",
-            response_checksum_validation="when_required",
-        ),
+        config=Config(signature_version="s3v4"),
     )
 
 def get_db():
@@ -66,6 +61,11 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS users "
         "(username TEXT PRIMARY KEY, password_hash TEXT NOT NULL)"
     )
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS file_meta "
+        "(file_id TEXT PRIMARY KEY, filename TEXT, size INTEGER, "
+        "hash TEXT, key_tag TEXT, b2 BOOLEAN)"
+    )
     conn.commit()
     cur.close()
     conn.close()
@@ -75,6 +75,7 @@ LOGIN_ATTEMPTS = defaultdict(lambda: {"count": 0, "locked_until": 0})
 USER_KEYS      = {}
 FILE_META      = {}
 SESSION_LOGS   = {}
+MESSAGE_QUEUE  = defaultdict(list)
 
 # ── User DB with JSON fallback ────────────────────────────────────────────────
 def load_users():
@@ -111,6 +112,24 @@ def save_user(username, password_hash):
     with open(USERS_FILE, "w") as f:
         json.dump(users, f, indent=2)
 
+def save_user_password(username, password_hash):
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET password_hash = %s WHERE username = %s", (password_hash, username))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return
+        except Exception as e:
+            print(f"DB error: {e}")
+    users = load_users()
+    if username in users:
+        users[username]["password_hash"] = password_hash
+        with open(USERS_FILE, "w") as f:
+            json.dump(users, f, indent=2)
+
 def get_user(username):
     if DATABASE_URL:
         try:
@@ -125,6 +144,41 @@ def get_user(username):
             print(f"DB error, falling back to JSON: {e}")
     users = load_users()
     return users.get(username)
+
+# ── File meta DB ──────────────────────────────────────────────────────────────
+def save_file_meta(file_id, meta):
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO file_meta (file_id, filename, size, hash, key_tag, b2) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (file_id) DO NOTHING",
+                (file_id, meta["filename"], meta["size"], meta["hash"], meta["key_tag"], meta.get("b2", False))
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+            return
+        except Exception as e:
+            print(f"DB error saving file meta: {e}")
+    FILE_META[file_id] = meta
+
+def get_file_meta(file_id):
+    if DATABASE_URL:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM file_meta WHERE file_id = %s", (file_id,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                return {"filename": row["filename"], "size": row["size"],
+                        "hash": row["hash"], "key_tag": row["key_tag"], "b2": row["b2"]}
+        except Exception as e:
+            print(f"DB error getting file meta: {e}")
+    return FILE_META.get(file_id)
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
 def make_jwt(username):
@@ -230,6 +284,19 @@ async def get_users(request):
         return web.Response(status=401)
     return web.json_response({"users": list(load_users().keys())})
 
+async def reset_password(request):
+    admin_key = request.query.get("admin_key", "")
+    username  = request.query.get("username", "").strip()
+    new_pass  = request.query.get("new_password", "").strip()
+    if admin_key != ADMIN_KEY:
+        return web.Response(status=403, text="Forbidden")
+    if not username or not new_pass:
+        return web.Response(status=400, text="Missing username or new_password")
+    if not get_user(username):
+        return web.Response(status=404, text="User not found")
+    save_user_password(username, bcrypt.hashpw(new_pass.encode(), bcrypt.gensalt()).decode())
+    return web.Response(text=f"Password reset for {username}")
+
 async def broadcast(event, data, exclude=None):
     msg  = json.dumps({"type": event, "data": data})
     dead = []
@@ -269,28 +336,25 @@ async def upload_file(request):
     file_hash = hasher.hexdigest()
 
     if B2_KEY_ID and B2_APP_KEY:
-        # Encrypt then upload to Backblaze
         enc_tmp = tmp + ".enc"
         key_tag = encrypt_file(tmp, enc_tmp)
         try:
             b2 = get_b2_client()
             b2.upload_file(enc_tmp, B2_BUCKET_NAME, file_id)
             os.unlink(enc_tmp)
+            meta = {"filename": filename, "size": size, "hash": file_hash, "key_tag": key_tag, "b2": True}
         except Exception as e:
             print(f"B2 upload error: {e}")
-            # Fall back to local storage
             key_tag = encrypt_file(tmp, os.path.join(UPLOAD_DIR, file_id))
+            meta = {"filename": filename, "size": size, "hash": file_hash, "key_tag": key_tag, "b2": False}
         os.unlink(tmp)
-        FILE_META[file_id] = {"filename": filename, "size": size,
-                              "hash": file_hash, "key_tag": key_tag, "b2": True}
     else:
-        # Local storage fallback
         enc = os.path.join(UPLOAD_DIR, file_id)
         key_tag = encrypt_file(tmp, enc)
         os.unlink(tmp)
-        FILE_META[file_id] = {"filename": filename, "size": size,
-                              "hash": file_hash, "key_tag": key_tag, "b2": False}
+        meta = {"filename": filename, "size": size, "hash": file_hash, "key_tag": key_tag, "b2": False}
 
+    save_file_meta(file_id, meta)
     return web.json_response({"fileId": file_id, "filename": filename,
                                "size": size, "hash": file_hash, "from": user})
 
@@ -301,12 +365,11 @@ async def download_file(request):
     file_id = request.query.get("file_id", "")
     if not file_id or "/" in file_id or ".." in file_id:
         return web.Response(status=400, text="Bad file_id")
-    meta = FILE_META.get(file_id)
+    meta = get_file_meta(file_id)
     if not meta:
         return web.Response(status=404, text="Not found")
 
     if meta.get("b2") and B2_KEY_ID and B2_APP_KEY:
-        # Download from Backblaze
         try:
             b2 = get_b2_client()
             tmp = os.path.join(UPLOAD_DIR, file_id + ".dl")
@@ -384,13 +447,17 @@ async def websocket_handler(request):
                                 "public_key": USER_KEYS[user]["public_pem"].decode()
                             })
                     # Deliver any queued messages from this peer
-                    queued = MESSAGE_QUEUE.pop(user, [])
+                    queued = MESSAGE_QUEUE.get(user, [])
+                    remaining = []
                     for qmsg in queued:
                         if qmsg["from"] == new_peer:
                             await ws.send_str(json.dumps({
                                 "type": "chat",
                                 "data": qmsg
                             }))
+                        else:
+                            remaining.append(qmsg)
+                    MESSAGE_QUEUE[user] = remaining
 
             elif mtype == "chat":
                 peer = CONNECTED[ws].get("peer")
@@ -401,20 +468,17 @@ async def websocket_handler(request):
                 for ws2, info2 in list(CONNECTED.items()):
                     if info2["user"] == peer:
                         if info2.get("peer") == user:
-                            # Recipient is chatting with sender — deliver message
                             await ws2.send_str(json.dumps({
                                 "type": "chat",
                                 "data": {"from": user, **{k: v for k, v in payload.items() if k != "type"}}
                             }))
                             delivered = True
                         else:
-                            # Recipient is chatting with someone else — send notification only
                             await ws2.send_str(json.dumps({
                                 "type": "notification",
                                 "data": {"from": user, "text": "Sent you a message"}
                             }))
                 if not delivered:
-                    # Queue message for when recipient selects sender
                     MESSAGE_QUEUE[peer].append({"from": user, **{k: v for k, v in payload.items() if k != "type"}})
 
             elif mtype == "file":
@@ -448,12 +512,13 @@ async def index(request):
 
 app.router.add_get("/", index)
 app.add_routes([
-    web.post("/register", register),
-    web.post("/login",    login),
-    web.get("/users",     get_users),
-    web.get("/ws",        websocket_handler),
-    web.post("/upload",   upload_file),
-    web.get("/download",  download_file),
+    web.post("/register",       register),
+    web.post("/login",          login),
+    web.get("/users",           get_users),
+    web.get("/reset-password",  reset_password),
+    web.get("/ws",              websocket_handler),
+    web.post("/upload",         upload_file),
+    web.get("/download",        download_file),
 ])
 
 if __name__ == "__main__":

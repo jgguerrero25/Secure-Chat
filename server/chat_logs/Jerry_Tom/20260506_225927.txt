@@ -1,0 +1,8 @@
+=== Session opened 2026-05-06T22:59:27.984805 ===
+[22:59:29] Tom -> Jerry: [encrypted]
+[22:59:34] Jerry -> Tom: [encrypted]
+[22:59:39] Jerry -> Tom: [encrypted]
+[22:59:45] Jerry -> Tom: [encrypted]
+[22:59:54] Tom -> Jerry: [encrypted]
+[23:00:00] Jerry -> Tom: [file] Screenshot 2024-04-29 103026.png
+=== Session closed 2026-05-06T23:00:05.767074 ===
