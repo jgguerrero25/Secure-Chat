@@ -25,5 +25,8 @@
   },
   "Santa": {
     "password_hash": "$2b$12$Q8mwraIbf1.kWVn8g7KCUOQDn1rPE6UBVBy5pI3FssK2zI7HtAliO"
+  },
+  "bob": {
+    "password_hash": "$2b$12$mBV5DQVWny6azvrIxOuIqOh6cyfCI3oKJxzMzuE1ZbsZccH7/Xaga"
   }
 }
