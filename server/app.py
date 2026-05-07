@@ -100,7 +100,6 @@ async def websocket_handler(request):
                     await broadcast("chat", {"from": user, "text": payload["text"]}, exclude=ws)
                     continue
 
-
     finally:
         old_user = CONNECTED.pop(ws, None)
 
