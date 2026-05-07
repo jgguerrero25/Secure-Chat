@@ -4,4 +4,4 @@ bcrypt
 cryptography
 PySide6
 psycopg2-binary
-boto3
+boto3==1.28.0
